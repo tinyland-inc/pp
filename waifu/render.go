@@ -1,11 +1,13 @@
 package waifu
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"image/color"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/disintegration/imaging"
@@ -71,6 +73,12 @@ func DetectProtocol() RenderProtocol {
 // RenderImage renders imageData using the protocol specified in cfg. It returns
 // the string containing the appropriate escape sequences (or unicode art).
 func RenderImage(imageData []byte, cfg RenderConfig) (string, error) {
+	// Try chafa first (handles all protocols automatically)
+	if result, err := renderChafa(imageData, cfg.MaxCols, cfg.MaxRows); err == nil {
+		return result, nil
+	}
+
+	// Fall back to native implementation
 	switch cfg.Protocol {
 	case ProtocolKitty:
 		return renderKitty(imageData, cfg.MaxCols, cfg.MaxRows)
@@ -167,6 +175,43 @@ func renderUnicode(imageData []byte, cols, rows int) (string, error) {
 // renderNone returns a placeholder when no image protocol is available.
 func renderNone() (string, error) {
 	return "(image: protocol not supported)", nil
+}
+
+// renderChafa uses the chafa CLI tool for auto-detected terminal graphics.
+func renderChafa(imageData []byte, cols, rows int) (string, error) {
+	// Check if chafa is available
+	chafaPath, err := exec.LookPath("chafa")
+	if err != nil {
+		return "", fmt.Errorf("chafa not found: %w", err)
+	}
+
+	// Create temp file
+	tmpFile, err := os.CreateTemp("", "waifu-*.png")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(imageData); err != nil {
+		tmpFile.Close()
+		return "", err
+	}
+	tmpFile.Close()
+
+	// Run chafa with auto-detection
+	cmd := exec.Command(chafaPath,
+		"--size", fmt.Sprintf("%dx%d", cols, rows),
+		"--format", "auto", // Auto-detect Kitty/iTerm2/Sixel/symbols
+		tmpFile.Name())
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("chafa failed: %w", err)
+	}
+
+	return stdout.String(), nil
 }
 
 // colorToRGBA converts a color.Color to uint8 RGBA components.

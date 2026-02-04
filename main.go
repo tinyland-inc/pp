@@ -176,6 +176,7 @@ func main() {
 	case *runBanner:
 		// --waifu flag overrides config file setting
 		waifuEnabled := cfg.Display.Waifu.Enabled || *showWaifu
+		termWidth, termHeight := banner.DetectTerminalSize()
 		bannerCfg := banner.BannerConfig{
 			CacheDir:        cfg.Daemon.CacheDir,
 			CacheTTL:        parseDuration(cfg.Daemon.PollInterval),
@@ -184,8 +185,8 @@ func main() {
 			WaifuCacheDir:   filepath.Join(cfg.Daemon.CacheDir, "waifu"),
 			WaifuCacheTTL:   parseDuration(cfg.Display.Waifu.CacheTTL),
 			WaifuMaxCacheMB: cfg.Display.Waifu.MaxCacheMB,
-			TermWidth:       80,
-			TermHeight:      24,
+			TermWidth:       termWidth,
+			TermHeight:      termHeight,
 			Logger:          logger,
 		}
 		b := banner.NewBanner(bannerCfg)

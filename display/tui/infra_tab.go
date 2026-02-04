@@ -102,6 +102,9 @@ func renderTailscaleTable(nodes []collectors.TailscaleNode, layout LayoutConfig)
 		{Title: "OS", Width: 8, Align: widgets.AlignLeft},
 		{Title: "Status", Width: 6, Align: widgets.AlignCenter},
 		{Title: "Last Seen", Width: 10, Align: widgets.AlignRight},
+		{Title: "CPU", Width: 6, Align: widgets.AlignRight},
+		{Title: "RAM", Width: 6, Align: widgets.AlignRight},
+		{Title: "Disk", Width: 6, Align: widgets.AlignRight},
 	}
 
 	rows := make([][]string, 0, len(nodes))
@@ -128,6 +131,19 @@ func renderTailscaleTable(nodes []collectors.TailscaleNode, layout LayoutConfig)
 
 		lastSeen := formatRelativeTime(node.LastSeen)
 
+		cpuStr := "-"
+		if node.CPUPercent != nil {
+			cpuStr = fmt.Sprintf("%.0f%%", *node.CPUPercent)
+		}
+		ramStr := "-"
+		if node.RAMPercent != nil {
+			ramStr = fmt.Sprintf("%.0f%%", *node.RAMPercent)
+		}
+		diskStr := "-"
+		if node.DiskPercent != nil {
+			diskStr = fmt.Sprintf("%.0f%%", *node.DiskPercent)
+		}
+
 		rows = append(rows, []string{
 			name,
 			node.Hostname,
@@ -135,6 +151,9 @@ func renderTailscaleTable(nodes []collectors.TailscaleNode, layout LayoutConfig)
 			node.OS,
 			status,
 			lastSeen,
+			cpuStr,
+			ramStr,
+			diskStr,
 		})
 	}
 

@@ -231,20 +231,11 @@ func (b *Banner) fetchWaifuImage(ctx context.Context, category string) string {
 // computeUptime returns a human-readable system uptime string.
 // Returns "unknown" if the uptime cannot be determined.
 func computeUptime() string {
-	// Read /proc/uptime on Linux; return "unknown" on other platforms.
-	data, err := os.ReadFile("/proc/uptime")
-	if err != nil {
+	d := getSystemUptime()
+	if d == 0 {
 		return "unknown"
 	}
 
-	var seconds float64
-	n, err := parseUptimeSeconds(data)
-	if err != nil {
-		return "unknown"
-	}
-	seconds = n
-
-	d := time.Duration(seconds) * time.Second
 	days := int(d.Hours()) / 24
 	hours := int(d.Hours()) % 24
 	mins := int(d.Minutes()) % 60

@@ -100,14 +100,20 @@ type AccountConfig struct {
 	Enabled bool
 }
 
+// TokenRefresherInterface abstracts the token refresh operation for testing.
+type TokenRefresherInterface interface {
+	RefreshAndPersist(ctx context.Context, credPath string, refreshToken string) (*TokenRefreshResponse, error)
+}
+
 // ClaudeCollector implements collectors.Collector for Claude usage data.
 // It coordinates concurrent data collection across multiple subscription
 // and API accounts, isolating per-account failures so one broken account
 // does not prevent collection from the others.
 type ClaudeCollector struct {
-	accounts   []AccountConfig
-	logger     *slog.Logger
-	credLoader CredentialLoader
+	accounts       []AccountConfig
+	logger         *slog.Logger
+	credLoader     CredentialLoader
+	tokenRefresher TokenRefresherInterface
 }
 
 // NewClaudeCollector creates a ClaudeCollector for the given accounts.
@@ -118,9 +124,10 @@ func NewClaudeCollector(accounts []AccountConfig, logger *slog.Logger) *ClaudeCo
 	}
 
 	return &ClaudeCollector{
-		accounts:   accounts,
-		logger:     logger,
-		credLoader: newCredentialLoader(),
+		accounts:       accounts,
+		logger:         logger,
+		credLoader:     newCredentialLoader(),
+		tokenRefresher: NewTokenRefresher(logger),
 	}
 }
 
@@ -254,17 +261,44 @@ func (c *ClaudeCollector) collectSubscription(ctx context.Context, acct AccountC
 		}
 	}
 
-	// Check if credentials have expired.
-	if creds.IsExpired() {
-		expiresAt := time.UnixMilli(creds.ExpiresAt)
-		c.logger.Warn("credentials expired", "account", acct.Name, "expired_at", expiresAt)
-		return accountResult{
-			usage: collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   "subscription",
-				Status: "auth_failed",
-			},
-			warnings: []string{fmt.Sprintf("account %q: OAuth credentials expired at %s", acct.Name, expiresAt.Format(time.RFC3339))},
+	// Check if credentials need refresh (expired or expiring soon).
+	if creds.NeedsRefresh() {
+		c.logger.Info("credentials need refresh", "account", acct.Name, "expires_in", creds.ExpiresIn())
+
+		if creds.RefreshToken == "" {
+			expiresAt := time.UnixMilli(creds.ExpiresAt)
+			c.logger.Warn("no refresh token available", "account", acct.Name)
+			return accountResult{
+				usage: collectors.ClaudeAccountUsage{
+					Name:   acct.Name,
+					Type:   "subscription",
+					Status: "auth_failed",
+				},
+				warnings: []string{fmt.Sprintf("account %q: OAuth credentials expired at %s and no refresh token available", acct.Name, expiresAt.Format(time.RFC3339))},
+			}
+		}
+
+		// Attempt token refresh.
+		tokens, err := c.tokenRefresher.RefreshAndPersist(ctx, acct.CredentialsPath, creds.RefreshToken)
+		if err != nil {
+			c.logger.Warn("token refresh failed", "account", acct.Name, "error", err)
+			// If refresh fails and token is already expired, report auth failure.
+			if creds.IsExpired() {
+				return accountResult{
+					usage: collectors.ClaudeAccountUsage{
+						Name:   acct.Name,
+						Type:   "subscription",
+						Status: "auth_failed",
+					},
+					warnings: []string{fmt.Sprintf("account %q: token refresh failed: %v", acct.Name, err)},
+				}
+			}
+			// Token not yet expired, continue with existing token but warn.
+			c.logger.Warn("continuing with existing token", "account", acct.Name, "expires_in", creds.ExpiresIn())
+		} else {
+			// Refresh succeeded, update the access token for this request.
+			c.logger.Info("token refreshed successfully", "account", acct.Name)
+			creds.AccessToken = tokens.AccessToken
 		}
 	}
 

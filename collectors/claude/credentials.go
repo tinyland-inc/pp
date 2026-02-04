@@ -67,6 +67,17 @@ func (j *OAuthCredential) ExpiresIn() time.Duration {
 	return time.Until(expiresTime)
 }
 
+// NeedsRefresh reports whether the access token should be refreshed.
+// Returns true if the token has expired or will expire within the
+// refresh buffer window (5 minutes by default). This allows proactive
+// refresh before the token actually expires.
+func (j *OAuthCredential) NeedsRefresh() bool {
+	expiresTime := time.UnixMilli(j.ExpiresAt)
+	// Refresh if token expires within the buffer window.
+	// refreshBuffer is defined in refresh.go as 5 * time.Minute.
+	return time.Until(expiresTime) < refreshBuffer
+}
+
 // NormalizeTier converts the raw rateLimitTier string from the credential
 // file to a short-form tier name. Known tiers are mapped as follows:
 //

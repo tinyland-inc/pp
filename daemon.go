@@ -18,6 +18,7 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/claude"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/infra"
 	"gitlab.com/tinyland/lab/prompt-pulse/config"
+	"gitlab.com/tinyland/lab/prompt-pulse/status"
 	"gitlab.com/tinyland/lab/prompt-pulse/waifu"
 )
 
@@ -243,17 +244,37 @@ func (d *daemon) runOnce(ctx context.Context) error {
 	wg.Wait()
 
 	// Prefetch waifu images after collectors finish.
+	// Evaluate system status and prefetch the matching category so banner
+	// can display an appropriate image without a network round-trip.
 	if d.prefetcher != nil {
 		go func() {
 			prefetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			cached, err := d.prefetcher.EnsureCached(prefetchCtx)
-			if err != nil {
-				d.logger.Warn("waifu prefetch failed", "error", err)
-			} else if cached {
-				d.logger.Debug("waifu image already cached")
+
+			// Determine the correct category based on current system status.
+			category := d.selectWaifuCategory()
+
+			if category == "" {
+				// Fallback to static prefetch if status evaluation fails.
+				cached, err := d.prefetcher.EnsureCached(prefetchCtx)
+				if err != nil {
+					d.logger.Warn("waifu prefetch failed", "error", err)
+				} else if cached {
+					d.logger.Debug("waifu image already cached")
+				} else {
+					d.logger.Info("waifu image prefetched")
+				}
+				return
+			}
+
+			d.logger.Debug("waifu prefetch: selected category based on status",
+				"category", category,
+			)
+
+			if err := d.prefetcher.PrefetchCategory(prefetchCtx, category); err != nil {
+				d.logger.Warn("waifu prefetch failed", "error", err, "category", category)
 			} else {
-				d.logger.Info("waifu image prefetched")
+				d.logger.Info("waifu image prefetched for status category", "category", category)
 			}
 		}()
 	}
@@ -400,4 +421,37 @@ func configToInfraConfig(cfg *config.Config) infra.InfraCollectorConfig {
 		NodeMetricsSSHUser: cfg.Tailscale.NodeMetricsSSHUser,
 		NodeMetricsTimeout: nodeMetricsTimeout,
 	}
+}
+
+// selectWaifuCategory evaluates current system status from cached collector
+// data and selects an appropriate waifu category. Returns empty string if
+// status cannot be determined (e.g., no cached data).
+func (d *daemon) selectWaifuCategory() string {
+	ttl := parseDuration(d.config.Daemon.PollInterval)
+
+	// Load cached collector data.
+	claudeData, _, _ := cache.GetTyped[collectors.ClaudeUsage](d.store, "claude", ttl)
+	billingData, _, _ := cache.GetTyped[collectors.BillingData](d.store, "billing", ttl)
+	infraData, _, _ := cache.GetTyped[collectors.InfraStatus](d.store, "infra", ttl)
+
+	// If all data is missing, we can't evaluate status.
+	if claudeData == nil && billingData == nil && infraData == nil {
+		d.logger.Debug("waifu prefetch: no cached data available for status evaluation")
+		return ""
+	}
+
+	// Evaluate system status based on cached data.
+	evaluator := status.NewEvaluator(status.DefaultEvaluatorConfig())
+	systemStatus := evaluator.Evaluate(claudeData, billingData, infraData)
+
+	// Select category based on overall status level.
+	selector := status.NewSelector(status.DefaultSelectorConfig())
+	category := selector.SelectCategory(systemStatus.Overall)
+
+	d.logger.Debug("waifu prefetch: status evaluation complete",
+		"overall_status", systemStatus.Overall.String(),
+		"selected_category", category,
+	)
+
+	return category
 }

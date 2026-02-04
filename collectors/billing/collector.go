@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -187,12 +188,31 @@ func (b *BillingCollector) Collect(ctx context.Context) (*collectors.CollectResu
 	}, nil
 }
 
+// getAPIKeyFromEnvOrFile looks up an API key from environment variable
+// or from a file path specified in ENVVAR_FILE. This supports SOPS-decrypted
+// secrets which are mounted as files rather than environment variables.
+func getAPIKeyFromEnvOrFile(envVar string) string {
+	// 1. Direct env var takes precedence.
+	if key := os.Getenv(envVar); key != "" {
+		return key
+	}
+	// 2. File-based lookup (env var + "_FILE" suffix).
+	fileEnv := envVar + "_FILE"
+	if filePath := os.Getenv(fileEnv); filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			return strings.TrimSpace(string(data))
+		}
+	}
+	return ""
+}
+
 // collectProvider fetches billing data for a single provider. It never returns
 // an error; failures are captured in the providerResult with an appropriate
 // status and warning.
 func (b *BillingCollector) collectProvider(ctx context.Context, p ProviderConfig) providerResult {
-	// Look up the API key from the environment.
-	apiKey := os.Getenv(p.APIKeyEnv)
+	// Look up the API key from environment or file.
+	apiKey := getAPIKeyFromEnvOrFile(p.APIKeyEnv)
 	if apiKey == "" {
 		b.logger.Warn("API key not found in environment", "provider", p.Name, "env_var", p.APIKeyEnv)
 		return providerResult{
