@@ -8,6 +8,9 @@ import (
 // ========== ClaudeUsage.StarshipOutput Tests ==========
 
 func TestClaudeUsage_StarshipOutput_SingleSubscription(t *testing.T) {
+	// Use a future reset time to test the relative time formatting.
+	futureReset := time.Now().Add(2*time.Hour + 15*time.Minute)
+
 	usage := &ClaudeUsage{
 		Accounts: []ClaudeAccountUsage{
 			{
@@ -17,20 +20,48 @@ func TestClaudeUsage_StarshipOutput_SingleSubscription(t *testing.T) {
 				Status: "ok",
 				FiveHour: &UsagePeriod{
 					Utilization: 45,
-					ResetsAt:    time.Date(2025, 1, 15, 5, 0, 0, 0, time.UTC),
+					ResetsAt:    futureReset,
 				},
 			},
 		},
 	}
 
 	got := usage.StarshipOutput()
-	want := "personal:pro 45%"
-	if got != want {
-		t.Errorf("StarshipOutput() = %q, want %q", got, want)
+	// Should include a reset time like "(2h 15m)" and no warning since < 80%.
+	if !containsSubstrings(got, []string{"personal:pro 45%", "(2h"}) {
+		t.Errorf("StarshipOutput() = %q, expected to contain 'personal:pro 45%%' and reset time", got)
+	}
+	if containsSubstrings(got, []string{"⚠️"}) {
+		t.Errorf("StarshipOutput() = %q, should not contain warning emoji for 45%%", got)
 	}
 }
 
+// containsSubstrings returns true if s contains all the given substrings.
+func containsSubstrings(s string, subs []string) bool {
+	for _, sub := range subs {
+		if !containsString(s, sub) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStringHelper(s, sub))
+}
+
+func containsStringHelper(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 func TestClaudeUsage_StarshipOutput_MultipleAccounts(t *testing.T) {
+	futureReset := time.Now().Add(1 * time.Hour)
+
 	usage := &ClaudeUsage{
 		Accounts: []ClaudeAccountUsage{
 			{
@@ -40,7 +71,7 @@ func TestClaudeUsage_StarshipOutput_MultipleAccounts(t *testing.T) {
 				Status: "ok",
 				FiveHour: &UsagePeriod{
 					Utilization: 80,
-					ResetsAt:    time.Date(2025, 1, 15, 5, 0, 0, 0, time.UTC),
+					ResetsAt:    futureReset,
 				},
 			},
 			{
@@ -51,19 +82,19 @@ func TestClaudeUsage_StarshipOutput_MultipleAccounts(t *testing.T) {
 				RateLimits: &APIRateLimits{
 					RequestsLimit:     1000,
 					RequestsRemaining: 750,
-					RequestsReset:     time.Date(2025, 1, 15, 0, 1, 0, 0, time.UTC),
+					RequestsReset:     futureReset,
 					TokensLimit:       100000,
 					TokensRemaining:   80000,
-					TokensReset:       time.Date(2025, 1, 15, 0, 1, 0, 0, time.UTC),
+					TokensReset:       futureReset,
 				},
 			},
 		},
 	}
 
 	got := usage.StarshipOutput()
-	want := "personal:max_5x 80% | work:tier_2 25%"
-	if got != want {
-		t.Errorf("StarshipOutput() = %q, want %q", got, want)
+	// 80% should trigger warning emoji; 25% should not.
+	if !containsSubstrings(got, []string{"personal:max_5x 80%", "⚠️", "work:tier_2 25%"}) {
+		t.Errorf("StarshipOutput() = %q, expected both accounts with warning for 80%%", got)
 	}
 }
 
@@ -87,6 +118,8 @@ func TestClaudeUsage_StarshipOutput_ErrorStatus(t *testing.T) {
 }
 
 func TestClaudeUsage_StarshipOutput_MixedOkAndError(t *testing.T) {
+	futureReset := time.Now().Add(3 * time.Hour)
+
 	usage := &ClaudeUsage{
 		Accounts: []ClaudeAccountUsage{
 			{
@@ -96,7 +129,7 @@ func TestClaudeUsage_StarshipOutput_MixedOkAndError(t *testing.T) {
 				Status: "ok",
 				FiveHour: &UsagePeriod{
 					Utilization: 10,
-					ResetsAt:    time.Date(2025, 1, 15, 5, 0, 0, 0, time.UTC),
+					ResetsAt:    futureReset,
 				},
 			},
 			{
@@ -109,9 +142,9 @@ func TestClaudeUsage_StarshipOutput_MixedOkAndError(t *testing.T) {
 	}
 
 	got := usage.StarshipOutput()
-	want := "good:pro 10% | bad:ERR"
-	if got != want {
-		t.Errorf("StarshipOutput() = %q, want %q", got, want)
+	// First account should show usage with reset time; second should show ERR.
+	if !containsSubstrings(got, []string{"good:pro 10%", "bad:ERR"}) {
+		t.Errorf("StarshipOutput() = %q, expected good:pro 10%% and bad:ERR", got)
 	}
 }
 
@@ -133,6 +166,8 @@ func TestClaudeUsage_StarshipOutput_Nil(t *testing.T) {
 
 func TestClaudeUsage_StarshipOutput_APIUtilization(t *testing.T) {
 	// Verify rate limit utilization calculation: (limit - remaining) / limit * 100.
+	futureReset := time.Now().Add(30 * time.Minute)
+
 	usage := &ClaudeUsage{
 		Accounts: []ClaudeAccountUsage{
 			{
@@ -143,20 +178,22 @@ func TestClaudeUsage_StarshipOutput_APIUtilization(t *testing.T) {
 				RateLimits: &APIRateLimits{
 					RequestsLimit:     2000,
 					RequestsRemaining: 500,
-					RequestsReset:     time.Date(2025, 1, 15, 0, 1, 0, 0, time.UTC),
+					RequestsReset:     futureReset,
 					TokensLimit:       200000,
 					TokensRemaining:   50000,
-					TokensReset:       time.Date(2025, 1, 15, 0, 1, 0, 0, time.UTC),
+					TokensReset:       futureReset,
 				},
 			},
 		},
 	}
 
 	got := usage.StarshipOutput()
-	// (2000 - 500) / 2000 * 100 = 75%
-	want := "api-acct:tier_4 75%"
-	if got != want {
-		t.Errorf("StarshipOutput() = %q, want %q", got, want)
+	// (2000 - 500) / 2000 * 100 = 75%, should not trigger warning (< 80%).
+	if !containsSubstrings(got, []string{"api-acct:tier_4 75%"}) {
+		t.Errorf("StarshipOutput() = %q, expected 75%% utilization", got)
+	}
+	if containsSubstrings(got, []string{"⚠️"}) {
+		t.Errorf("StarshipOutput() = %q, should not contain warning for 75%%", got)
 	}
 }
 

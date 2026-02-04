@@ -104,6 +104,12 @@ type TailscaleConfig struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	// UseCLIFallback enables falling back to the tailscale CLI when the API is unavailable.
 	UseCLIFallback bool `yaml:"use_cli_fallback"`
+	// CollectNodeMetrics enables SSH-based system metrics collection for online nodes.
+	CollectNodeMetrics bool `yaml:"collect_node_metrics"`
+	// NodeMetricsSSHUser is the username for SSH connections.
+	NodeMetricsSSHUser string `yaml:"node_metrics_ssh_user"`
+	// NodeMetricsTimeout is the SSH timeout duration string (e.g. "5s").
+	NodeMetricsTimeout string `yaml:"node_metrics_timeout"`
 }
 
 // KubernetesConfig holds cluster connection settings.
@@ -198,9 +204,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		Tailscale: TailscaleConfig{
-			Tailnet:        "",
-			APIKeyEnv:      "TAILSCALE_API_KEY",
-			UseCLIFallback: true,
+			Tailnet:            "",
+			APIKeyEnv:          "TAILSCALE_API_KEY",
+			UseCLIFallback:     true,
+			CollectNodeMetrics: false,
+			NodeMetricsSSHUser: "",
+			NodeMetricsTimeout: "5s",
 		},
 		Kubernetes: KubernetesConfig{
 			Contexts: []KubeContext{},

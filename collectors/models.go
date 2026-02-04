@@ -173,6 +173,11 @@ type TailscaleNode struct {
 	LastSeen     time.Time `json:"last_seen"`
 	Tags         []string  `json:"tags,omitempty"`
 	DashboardURL string    `json:"dashboard_url"`
+
+	// System metrics (populated via SSH for online nodes)
+	CPUPercent  *float64 `json:"cpu_percent,omitempty"`
+	RAMPercent  *float64 `json:"ram_percent,omitempty"`
+	DiskPercent *float64 `json:"disk_percent,omitempty"`
 }
 
 // KubernetesCluster represents a single Kubernetes cluster.
@@ -225,9 +230,35 @@ type KubernetesNode struct {
 
 // ========== Starship Output Helpers ==========
 
+// formatRelativeTime formats a time.Time as a human-readable relative duration.
+// Returns strings like "2h 15m", "3d 12h", "45m", or "now" if already past.
+func formatRelativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	d := time.Until(t)
+	if d <= 0 {
+		return "now"
+	}
+
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
+}
+
 // StarshipOutput generates a one-line string suitable for a Starship custom module.
-// Format: account_name:tier utilization% | account_name:tier utilization%
+// Format: account_name:tier utilization% (resets Xh Ym) | account_name:tier utilization%
 // Accounts with warnings are marked with a warning indicator.
+// High utilization (>80%) is marked with ⚠️.
 func (c *ClaudeUsage) StarshipOutput() string {
 	if c == nil || len(c.Accounts) == 0 {
 		return ""
@@ -241,19 +272,35 @@ func (c *ClaudeUsage) StarshipOutput() string {
 		}
 
 		var utilization float64
+		var resetStr string
 		switch acct.Type {
 		case "subscription":
 			if acct.FiveHour != nil {
 				utilization = acct.FiveHour.Utilization
+				if !acct.FiveHour.ResetsAt.IsZero() {
+					resetStr = formatRelativeTime(acct.FiveHour.ResetsAt)
+				}
 			}
 		case "api":
 			if acct.RateLimits != nil && acct.RateLimits.RequestsLimit > 0 {
 				used := acct.RateLimits.RequestsLimit - acct.RateLimits.RequestsRemaining
 				utilization = float64(used) / float64(acct.RateLimits.RequestsLimit) * 100
+				if !acct.RateLimits.RequestsReset.IsZero() {
+					resetStr = formatRelativeTime(acct.RateLimits.RequestsReset)
+				}
 			}
 		}
 
-		parts = append(parts, fmt.Sprintf("%s:%s %.0f%%", acct.Name, acct.Tier, utilization))
+		// Build output with optional reset time and warning
+		output := fmt.Sprintf("%s:%s %.0f%%", acct.Name, acct.Tier, utilization)
+		if resetStr != "" {
+			output += fmt.Sprintf(" (%s)", resetStr)
+		}
+		if utilization >= 80 {
+			output += " ⚠️"
+		}
+
+		parts = append(parts, output)
 	}
 
 	return strings.Join(parts, " | ")
@@ -297,4 +344,45 @@ func (i *InfraStatus) StarshipOutput() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// NodeMetricsSummary returns a compact summary of node metrics for display.
+// Format: "hostname: CPU X% | RAM Y% | Disk Z%"
+// Returns empty string if node has no metrics.
+func (n *TailscaleNode) NodeMetricsSummary() string {
+	if n.CPUPercent == nil && n.RAMPercent == nil && n.DiskPercent == nil {
+		return ""
+	}
+
+	var parts []string
+	if n.CPUPercent != nil {
+		parts = append(parts, fmt.Sprintf("CPU %.0f%%", *n.CPUPercent))
+	}
+	if n.RAMPercent != nil {
+		parts = append(parts, fmt.Sprintf("RAM %.0f%%", *n.RAMPercent))
+	}
+	if n.DiskPercent != nil {
+		parts = append(parts, fmt.Sprintf("Disk %.0f%%", *n.DiskPercent))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%s: %s", n.Hostname, strings.Join(parts, " | "))
+}
+
+// HasHighUtilization returns true if any metric exceeds the threshold (80%).
+func (n *TailscaleNode) HasHighUtilization() bool {
+	threshold := 80.0
+	if n.CPUPercent != nil && *n.CPUPercent >= threshold {
+		return true
+	}
+	if n.RAMPercent != nil && *n.RAMPercent >= threshold {
+		return true
+	}
+	if n.DiskPercent != nil && *n.DiskPercent >= threshold {
+		return true
+	}
+	return false
 }

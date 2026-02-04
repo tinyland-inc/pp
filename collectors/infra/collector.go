@@ -59,6 +59,18 @@ type InfraCollectorConfig struct {
 
 	// KubeContexts lists the Kubernetes clusters to monitor.
 	KubeContexts []KubeContextConfig
+
+	// CollectNodeMetrics enables SSH-based system metrics collection
+	// for online Tailscale nodes (CPU, RAM, disk utilization).
+	CollectNodeMetrics bool
+
+	// NodeMetricsSSHUser is the username for SSH connections.
+	// Defaults to the current user if empty.
+	NodeMetricsSSHUser string
+
+	// NodeMetricsTimeout is the per-node SSH command timeout.
+	// Defaults to 5 seconds.
+	NodeMetricsTimeout time.Duration
 }
 
 // InfraCollector implements collectors.Collector for infrastructure status.
@@ -141,6 +153,7 @@ func (c *InfraCollector) Collect(ctx context.Context) (*collectors.CollectResult
 
 // collectTailscale fetches Tailscale mesh status using the API client first,
 // with optional CLI fallback. Returns nil status (not an error) if both fail.
+// If CollectNodeMetrics is enabled, also gathers CPU/RAM/disk metrics via SSH.
 func (c *InfraCollector) collectTailscale(ctx context.Context) (*collectors.TailscaleStatus, []string) {
 	var warnings []string
 
@@ -150,38 +163,53 @@ func (c *InfraCollector) collectTailscale(ctx context.Context) (*collectors.Tail
 		return nil, nil
 	}
 
+	var status *collectors.TailscaleStatus
+
 	// Try API client first if an API key is available.
 	if c.config.TailscaleAPIKey != "" {
 		c.logger.Debug("fetching tailscale status via API", "tailnet", c.config.Tailnet)
 
 		fetcher := newTailscaleAPIFetcher(c.config.Tailnet, c.config.TailscaleAPIKey, c.logger)
-		status, err := fetcher.FetchStatus(ctx)
-		if err == nil {
-			return status, nil
+		var err error
+		status, err = fetcher.FetchStatus(ctx)
+		if err != nil {
+			c.logger.Warn("tailscale API failed", "error", err)
+			warnings = append(warnings, fmt.Sprintf("tailscale API: %v", err))
+
+			// Fall through to CLI fallback if enabled.
+			if !c.config.UseCLIFallback {
+				return nil, warnings
+			}
 		}
+	}
 
-		c.logger.Warn("tailscale API failed", "error", err)
-		warnings = append(warnings, fmt.Sprintf("tailscale API: %v", err))
+	// Try CLI fallback if we don't have status yet.
+	if status == nil && c.config.UseCLIFallback {
+		c.logger.Debug("fetching tailscale status via CLI fallback")
 
-		// Fall through to CLI fallback if enabled.
-		if !c.config.UseCLIFallback {
+		fetcher := newTailscaleCLIFetcher(c.logger)
+		var err error
+		status, err = fetcher.FetchStatus(ctx)
+		if err != nil {
+			c.logger.Warn("tailscale CLI fallback failed", "error", err)
+			warnings = append(warnings, fmt.Sprintf("tailscale CLI: %v", err))
 			return nil, warnings
 		}
 	}
 
-	// Try CLI fallback.
-	c.logger.Debug("fetching tailscale status via CLI fallback")
+	// Collect node metrics if enabled and we have status.
+	if status != nil && c.config.CollectNodeMetrics {
+		c.logger.Debug("collecting node metrics via SSH")
 
-	fetcher := newTailscaleCLIFetcher(c.logger)
-	status, err := fetcher.FetchStatus(ctx)
-	if err == nil {
-		return status, warnings
+		metricsCollector := NewNodeMetricsCollector(NodeMetricsConfig{
+			SSHUser:    c.config.NodeMetricsSSHUser,
+			SSHTimeout: c.config.NodeMetricsTimeout,
+		}, c.logger)
+
+		metricsCollector.CollectAll(ctx, status)
 	}
 
-	c.logger.Warn("tailscale CLI fallback failed", "error", err)
-	warnings = append(warnings, fmt.Sprintf("tailscale CLI: %v", err))
-
-	return nil, warnings
+	return status, warnings
 }
 
 // clusterResult holds the outcome of fetching a single Kubernetes cluster.

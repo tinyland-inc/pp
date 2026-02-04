@@ -58,6 +58,7 @@ func main() {
 		runDaemon   = flag.Bool("daemon", false, "Run background polling daemon")
 		runTUI      = flag.Bool("tui", false, "Launch interactive Bubbletea TUI")
 		runBanner   = flag.Bool("banner", false, "Display system status banner")
+		showWaifu   = flag.Bool("waifu", false, "Show waifu image in banner (requires -banner)")
 		starshipMod = flag.String("starship", "", "Output one-line Starship format (claude|billing|infra)")
 		verbose     = flag.Bool("verbose", false, "Enable verbose logging")
 		showVersion = flag.Bool("version", false, "Print version and exit")
@@ -173,10 +174,12 @@ func main() {
 		}
 
 	case *runBanner:
+		// --waifu flag overrides config file setting
+		waifuEnabled := cfg.Display.Waifu.Enabled || *showWaifu
 		bannerCfg := banner.BannerConfig{
 			CacheDir:        cfg.Daemon.CacheDir,
 			CacheTTL:        parseDuration(cfg.Daemon.PollInterval),
-			WaifuEnabled:    cfg.Display.Waifu.Enabled,
+			WaifuEnabled:    waifuEnabled,
 			WaifuCategory:   cfg.Display.Waifu.Category,
 			WaifuCacheDir:   filepath.Join(cfg.Daemon.CacheDir, "waifu"),
 			WaifuCacheTTL:   parseDuration(cfg.Display.Waifu.CacheTTL),

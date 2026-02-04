@@ -706,6 +706,125 @@ func TestTailscaleNode_OmitsNilTags(t *testing.T) {
 	}
 }
 
+func TestTailscaleNode_NodeMetricsSummary_WithAllMetrics(t *testing.T) {
+	cpu := 45.0
+	ram := 60.0
+	disk := 75.0
+	node := TailscaleNode{
+		Hostname:    "honey",
+		CPUPercent:  &cpu,
+		RAMPercent:  &ram,
+		DiskPercent: &disk,
+	}
+
+	got := node.NodeMetricsSummary()
+	// Should contain all three metrics.
+	if got == "" {
+		t.Error("NodeMetricsSummary() returned empty string, expected metrics")
+	}
+	if !containsStringInTest(got, "honey") {
+		t.Errorf("NodeMetricsSummary() = %q, expected to contain hostname", got)
+	}
+	if !containsStringInTest(got, "CPU 45%") {
+		t.Errorf("NodeMetricsSummary() = %q, expected to contain CPU 45%%", got)
+	}
+	if !containsStringInTest(got, "RAM 60%") {
+		t.Errorf("NodeMetricsSummary() = %q, expected to contain RAM 60%%", got)
+	}
+	if !containsStringInTest(got, "Disk 75%") {
+		t.Errorf("NodeMetricsSummary() = %q, expected to contain Disk 75%%", got)
+	}
+}
+
+func TestTailscaleNode_NodeMetricsSummary_NoMetrics(t *testing.T) {
+	node := TailscaleNode{
+		Hostname: "laptop",
+	}
+
+	got := node.NodeMetricsSummary()
+	if got != "" {
+		t.Errorf("NodeMetricsSummary() = %q, expected empty string for no metrics", got)
+	}
+}
+
+func TestTailscaleNode_HasHighUtilization_HighCPU(t *testing.T) {
+	cpu := 85.0
+	ram := 50.0
+	disk := 60.0
+	node := TailscaleNode{
+		CPUPercent:  &cpu,
+		RAMPercent:  &ram,
+		DiskPercent: &disk,
+	}
+
+	if !node.HasHighUtilization() {
+		t.Error("HasHighUtilization() = false, expected true for CPU >= 80")
+	}
+}
+
+func TestTailscaleNode_HasHighUtilization_HighRAM(t *testing.T) {
+	cpu := 50.0
+	ram := 90.0
+	disk := 60.0
+	node := TailscaleNode{
+		CPUPercent:  &cpu,
+		RAMPercent:  &ram,
+		DiskPercent: &disk,
+	}
+
+	if !node.HasHighUtilization() {
+		t.Error("HasHighUtilization() = false, expected true for RAM >= 80")
+	}
+}
+
+func TestTailscaleNode_HasHighUtilization_HighDisk(t *testing.T) {
+	cpu := 50.0
+	ram := 50.0
+	disk := 95.0
+	node := TailscaleNode{
+		CPUPercent:  &cpu,
+		RAMPercent:  &ram,
+		DiskPercent: &disk,
+	}
+
+	if !node.HasHighUtilization() {
+		t.Error("HasHighUtilization() = false, expected true for Disk >= 80")
+	}
+}
+
+func TestTailscaleNode_HasHighUtilization_AllNormal(t *testing.T) {
+	cpu := 50.0
+	ram := 50.0
+	disk := 60.0
+	node := TailscaleNode{
+		CPUPercent:  &cpu,
+		RAMPercent:  &ram,
+		DiskPercent: &disk,
+	}
+
+	if node.HasHighUtilization() {
+		t.Error("HasHighUtilization() = true, expected false for all metrics < 80")
+	}
+}
+
+func TestTailscaleNode_HasHighUtilization_NoMetrics(t *testing.T) {
+	node := TailscaleNode{}
+
+	if node.HasHighUtilization() {
+		t.Error("HasHighUtilization() = true, expected false for no metrics")
+	}
+}
+
+// containsStringInTest is a simple substring check for tests.
+func containsStringInTest(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 // ========== CollectResult Warnings Omit Empty Test ==========
 
 func TestCollectResult_WarningsOmitEmpty(t *testing.T) {

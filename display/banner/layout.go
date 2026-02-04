@@ -3,6 +3,7 @@ package banner
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
@@ -172,19 +173,80 @@ func (l *Layout) renderClaudeSummary(data *collectors.ClaudeUsage) []string {
 	return lines
 }
 
-// formatSubscriptionAccount formats a subscription Claude account.
+// formatSubscriptionAccount formats a subscription Claude account with reset times.
 func (l *Layout) formatSubscriptionAccount(acct collectors.ClaudeAccountUsage) string {
 	var parts []string
 	if acct.FiveHour != nil {
-		parts = append(parts, fmt.Sprintf("%.0f%% (5h)", acct.FiveHour.Utilization))
+		part := fmt.Sprintf("%.0f%% (5h", acct.FiveHour.Utilization)
+		if !acct.FiveHour.ResetsAt.IsZero() {
+			resetStr := l.formatRelativeTime(acct.FiveHour.ResetsAt)
+			if resetStr != "" {
+				part += ", " + resetStr
+			}
+		}
+		part += ")"
+
+		// Add warning indicator for high utilization.
+		if acct.FiveHour.Utilization >= 80 {
+			if l.config.ColorEnabled {
+				warningIcon := lipgloss.NewStyle().Foreground(colorWarning).Render("⚠️")
+				part += " " + warningIcon
+			} else {
+				part += " ⚠️"
+			}
+		}
+		parts = append(parts, part)
 	}
 	if acct.SevenDay != nil {
-		parts = append(parts, fmt.Sprintf("%.0f%% (7d)", acct.SevenDay.Utilization))
+		part := fmt.Sprintf("%.0f%% (7d", acct.SevenDay.Utilization)
+		if !acct.SevenDay.ResetsAt.IsZero() {
+			resetStr := l.formatRelativeTime(acct.SevenDay.ResetsAt)
+			if resetStr != "" {
+				part += ", " + resetStr
+			}
+		}
+		part += ")"
+
+		// Add warning indicator for high utilization.
+		if acct.SevenDay.Utilization >= 80 {
+			if l.config.ColorEnabled {
+				warningIcon := lipgloss.NewStyle().Foreground(colorWarning).Render("⚠️")
+				part += " " + warningIcon
+			} else {
+				part += " ⚠️"
+			}
+		}
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("  %s: 0%% (5h)", acct.Name)
 	}
 	return fmt.Sprintf("  %s: %s", acct.Name, strings.Join(parts, " | "))
+}
+
+// formatRelativeTime formats a time.Time as a human-readable relative duration.
+// Returns strings like "2h 15m", "3d 12h", "45m", or "" if already past.
+func (l *Layout) formatRelativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	d := time.Until(t)
+	if d <= 0 {
+		return "now"
+	}
+
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
 }
 
 // formatAPIAccount formats an API Claude account.
@@ -226,6 +288,7 @@ func (l *Layout) renderBillingSummary(data *collectors.BillingData) []string {
 
 // renderInfraSummary returns compact infrastructure status.
 // Format: "  ts: X/Y online" and "  k8s: cluster (status)"
+// Also shows per-node metrics if available.
 func (l *Layout) renderInfraSummary(data *collectors.InfraStatus) []string {
 	if data == nil {
 		return []string{l.styledMuted("  (no data)")}
@@ -236,6 +299,49 @@ func (l *Layout) renderInfraSummary(data *collectors.InfraStatus) []string {
 	if data.Tailscale != nil {
 		lines = append(lines, fmt.Sprintf("  ts: %d/%d online",
 			data.Tailscale.OnlineCount, data.Tailscale.TotalCount))
+
+		// Show per-node metrics for nodes that have them.
+		for _, node := range data.Tailscale.Nodes {
+			if !node.Online {
+				continue
+			}
+			if node.CPUPercent == nil && node.RAMPercent == nil && node.DiskPercent == nil {
+				continue
+			}
+
+			// Format node metrics.
+			var metrics []string
+			if node.CPUPercent != nil {
+				cpuStr := fmt.Sprintf("CPU %.0f%%", *node.CPUPercent)
+				if l.config.ColorEnabled && *node.CPUPercent >= 80 {
+					cpuStr = lipgloss.NewStyle().Foreground(colorWarning).Render(cpuStr)
+				}
+				metrics = append(metrics, cpuStr)
+			}
+			if node.RAMPercent != nil {
+				ramStr := fmt.Sprintf("RAM %.0f%%", *node.RAMPercent)
+				if l.config.ColorEnabled && *node.RAMPercent >= 80 {
+					ramStr = lipgloss.NewStyle().Foreground(colorWarning).Render(ramStr)
+				}
+				metrics = append(metrics, ramStr)
+			}
+			if node.DiskPercent != nil {
+				diskStr := fmt.Sprintf("Disk %.0f%%", *node.DiskPercent)
+				if l.config.ColorEnabled && *node.DiskPercent >= 80 {
+					diskStr = lipgloss.NewStyle().Foreground(colorWarning).Render(diskStr)
+				}
+				metrics = append(metrics, diskStr)
+			}
+
+			// Determine online status indicator.
+			statusIcon := "🟢"
+			if node.HasHighUtilization() {
+				statusIcon = "🟡"
+			}
+
+			nodeLine := fmt.Sprintf("    %s %s: %s", statusIcon, node.Hostname, strings.Join(metrics, " | "))
+			lines = append(lines, nodeLine)
+		}
 	}
 
 	for _, cluster := range data.Kubernetes {

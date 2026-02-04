@@ -18,18 +18,20 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/claude"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/infra"
 	"gitlab.com/tinyland/lab/prompt-pulse/config"
+	"gitlab.com/tinyland/lab/prompt-pulse/waifu"
 )
 
 // daemon manages the background polling loop that periodically runs all
 // registered collectors and writes results to the shared cache.
 type daemon struct {
-	config   *config.Config
-	logger   *slog.Logger
-	store    *cache.Store
-	registry *collectors.Registry
-	pidFile  string
-	lastRun  map[string]time.Time
-	mu       sync.Mutex // protects lastRun
+	config     *config.Config
+	logger     *slog.Logger
+	store      *cache.Store
+	registry   *collectors.Registry
+	prefetcher *waifu.Prefetcher
+	pidFile    string
+	lastRun    map[string]time.Time
+	mu         sync.Mutex // protects lastRun
 }
 
 // newDaemon creates a daemon with real collectors wired from the configuration.
@@ -59,13 +61,35 @@ func newDaemon(cfg *config.Config, logger *slog.Logger) (*daemon, error) {
 
 	pidFile := filepath.Join(cfg.Daemon.CacheDir, "prompt-pulse.pid")
 
+	// Initialize waifu prefetcher if enabled.
+	var prefetcher *waifu.Prefetcher
+	if cfg.Display.Waifu.Enabled {
+		waifuCacheDir := filepath.Join(cfg.Daemon.CacheDir, "waifu")
+		prefetchCfg := waifu.PrefetchConfig{
+			Category:   cfg.Display.Waifu.Category,
+			CacheDir:   waifuCacheDir,
+			CacheTTL:   parseDuration(cfg.Display.Waifu.CacheTTL),
+			MaxCacheMB: cfg.Display.Waifu.MaxCacheMB,
+			ProcessCfg: waifu.DefaultProcessConfig(), // Use defaults for image processing
+			Logger:     logger,
+			Timeout:    30 * time.Second,
+		}
+		var err error
+		prefetcher, err = waifu.NewPrefetcher(prefetchCfg)
+		if err != nil {
+			logger.Warn("failed to create waifu prefetcher", "error", err)
+			// Non-fatal: continue without waifu
+		}
+	}
+
 	return &daemon{
-		config:   cfg,
-		logger:   logger,
-		store:    store,
-		registry: registry,
-		pidFile:  pidFile,
-		lastRun:  make(map[string]time.Time),
+		config:     cfg,
+		logger:     logger,
+		store:      store,
+		registry:   registry,
+		prefetcher: prefetcher,
+		pidFile:    pidFile,
+		lastRun:    make(map[string]time.Time),
 	}, nil
 }
 
@@ -218,6 +242,22 @@ func (d *daemon) runOnce(ctx context.Context) error {
 
 	wg.Wait()
 
+	// Prefetch waifu images after collectors finish.
+	if d.prefetcher != nil {
+		go func() {
+			prefetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			cached, err := d.prefetcher.EnsureCached(prefetchCtx)
+			if err != nil {
+				d.logger.Warn("waifu prefetch failed", "error", err)
+			} else if cached {
+				d.logger.Debug("waifu image already cached")
+			} else {
+				d.logger.Info("waifu image prefetched")
+			}
+		}()
+	}
+
 	elapsed := time.Since(start)
 	d.logger.Info("collection pass complete",
 		"duration", fmt.Sprintf("%dms", elapsed.Milliseconds()),
@@ -345,10 +385,19 @@ func configToInfraConfig(cfg *config.Config) infra.InfraCollectorConfig {
 		}
 	}
 
+	// Parse node metrics timeout.
+	nodeMetricsTimeout := parseDuration(cfg.Tailscale.NodeMetricsTimeout)
+	if nodeMetricsTimeout == 0 {
+		nodeMetricsTimeout = 5 * time.Second
+	}
+
 	return infra.InfraCollectorConfig{
-		Tailnet:         cfg.Tailscale.Tailnet,
-		TailscaleAPIKey: tsAPIKey,
-		UseCLIFallback:  cfg.Tailscale.UseCLIFallback,
-		KubeContexts:    kubeContexts,
+		Tailnet:            cfg.Tailscale.Tailnet,
+		TailscaleAPIKey:    tsAPIKey,
+		UseCLIFallback:     cfg.Tailscale.UseCLIFallback,
+		KubeContexts:       kubeContexts,
+		CollectNodeMetrics: cfg.Tailscale.CollectNodeMetrics,
+		NodeMetricsSSHUser: cfg.Tailscale.NodeMetricsSSHUser,
+		NodeMetricsTimeout: nodeMetricsTimeout,
 	}
 }
