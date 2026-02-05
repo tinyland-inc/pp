@@ -16,6 +16,7 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/cache"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/display/layout"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/widgets"
 	"gitlab.com/tinyland/lab/prompt-pulse/status"
 	"gitlab.com/tinyland/lab/prompt-pulse/waifu"
 )
@@ -644,13 +645,16 @@ func (b *Banner) formatInfraForSection(data *collectors.InfraStatus, showNodeMet
 
 				var metrics []string
 				if node.CPUPercent != nil {
-					metrics = append(metrics, "CPU "+intToStr(int(*node.CPUPercent))+"%")
+					gauge := widgets.RenderMiniGauge(*node.CPUPercent, 6)
+					metrics = append(metrics, "CPU "+gauge+" "+intToStr(int(*node.CPUPercent))+"%")
 				}
 				if node.RAMPercent != nil {
-					metrics = append(metrics, "RAM "+intToStr(int(*node.RAMPercent))+"%")
+					gauge := widgets.RenderMiniGauge(*node.RAMPercent, 6)
+					metrics = append(metrics, "RAM "+gauge+" "+intToStr(int(*node.RAMPercent))+"%")
 				}
 				if node.DiskPercent != nil {
-					metrics = append(metrics, "Disk "+intToStr(int(*node.DiskPercent))+"%")
+					gauge := widgets.RenderMiniGauge(*node.DiskPercent, 6)
+					metrics = append(metrics, "Disk "+gauge+" "+intToStr(int(*node.DiskPercent))+"%")
 				}
 
 				if len(metrics) > 0 {

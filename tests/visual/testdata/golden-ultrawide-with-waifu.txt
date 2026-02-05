@@ -1,15 +1,15 @@
-XXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                                     │ Trends
-XXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   (no data)
-XXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                                   │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                      │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast           │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                                     │ Trends
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   (no data)
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                      │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast           │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 

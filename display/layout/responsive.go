@@ -200,8 +200,8 @@ func NewResponsiveConfig(width, height int) ResponsiveConfig {
 func columnsForMode(mode LayoutMode, termWidth int) ColumnConfig {
 	switch mode {
 	case LayoutUltraWide:
-		// 4-column: image(24) | main(50) | info(50) | sparklines(remaining)
-		imageCols := 24
+		// 4-column: image(32) | main(50) | info(50) | sparklines(remaining)
+		imageCols := 32 // Matches GetWaifuSize() return value for UltraWide (32x16)
 		mainCols := 50
 		infoCols := 50
 		separators := 9 // 3 separators * 3 chars each (" | ")

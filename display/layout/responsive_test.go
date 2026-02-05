@@ -184,7 +184,7 @@ func TestColumnsForMode(t *testing.T) {
 			name:          "ultra-wide 4-column",
 			mode:          LayoutUltraWide,
 			termWidth:     200,
-			wantImageCols: 24,
+			wantImageCols: 32, // Matches GetWaifuSize() for UltraWide (32x16)
 			wantMainCols:  50,
 		},
 	}
