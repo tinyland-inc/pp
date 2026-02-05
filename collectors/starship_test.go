@@ -507,12 +507,19 @@ func TestInfraStatus_StarshipOutput_TailscaleAndK8s(t *testing.T) {
 			TotalCount:  8,
 		},
 		Kubernetes: []KubernetesCluster{
-			{Name: "civo", Status: "healthy"},
+			{
+				Name:        "civo",
+				Status:      "healthy",
+				TotalNodes:  3,
+				ReadyNodes:  3,
+				TotalPods:   45,
+				RunningPods: 42,
+			},
 		},
 	}
 
 	got := infra.StarshipOutput()
-	want := "ts:5/8 k8s:civo:healthy"
+	want := "ts:5/8 k8s:civo(3/3 nodes, 42/45 pods)"
 	if got != want {
 		t.Errorf("StarshipOutput() = %q, want %q", got, want)
 	}
@@ -536,12 +543,19 @@ func TestInfraStatus_StarshipOutput_OnlyTailscale(t *testing.T) {
 func TestInfraStatus_StarshipOutput_OnlyK8s(t *testing.T) {
 	infra := &InfraStatus{
 		Kubernetes: []KubernetesCluster{
-			{Name: "prod", Status: "healthy"},
+			{
+				Name:        "prod",
+				Status:      "healthy",
+				TotalNodes:  5,
+				ReadyNodes:  5,
+				TotalPods:   120,
+				RunningPods: 115,
+			},
 		},
 	}
 
 	got := infra.StarshipOutput()
-	want := "k8s:prod:healthy"
+	want := "k8s:prod(5/5 nodes, 115/120 pods)"
 	if got != want {
 		t.Errorf("StarshipOutput() = %q, want %q", got, want)
 	}
@@ -554,14 +568,31 @@ func TestInfraStatus_StarshipOutput_MultipleK8s(t *testing.T) {
 			TotalCount:  12,
 		},
 		Kubernetes: []KubernetesCluster{
-			{Name: "civo", Status: "healthy"},
-			{Name: "rke2", Status: "degraded"},
-			{Name: "kind", Status: "offline"},
+			{
+				Name:        "civo",
+				Status:      "healthy",
+				TotalNodes:  3,
+				ReadyNodes:  3,
+				TotalPods:   48,
+				RunningPods: 45,
+			},
+			{
+				Name:        "rke2",
+				Status:      "degraded",
+				TotalNodes:  5,
+				ReadyNodes:  4,
+				TotalPods:   80,
+				RunningPods: 75,
+			},
+			{
+				Name:   "kind",
+				Status: "offline",
+			},
 		},
 	}
 
 	got := infra.StarshipOutput()
-	want := "ts:10/12 k8s:civo:healthy k8s:rke2:degraded k8s:kind:offline"
+	want := "ts:10/12 k8s:civo(3/3 nodes, 45/48 pods) k8s:rke2(4/5 nodes, 75/80 pods) k8s:kind(offline)"
 	if got != want {
 		t.Errorf("StarshipOutput() = %q, want %q", got, want)
 	}

@@ -54,6 +54,7 @@ func NewKubectlClient(logger *slog.Logger) *KubectlClient {
 func (k *KubectlClient) FetchCluster(ctx context.Context, kubeCtx KubeContextConfig) (*collectors.KubernetesCluster, error) {
 	cluster := &collectors.KubernetesCluster{
 		Name:         kubeCtx.Name,
+		Context:      kubeCtx.Name,
 		Platform:     kubeCtx.Platform,
 		DashboardURL: kubeCtx.DashboardURL,
 	}
@@ -80,6 +81,11 @@ func (k *KubectlClient) FetchCluster(ctx context.Context, kubeCtx KubeContextCon
 		k.logger.Warn("failed to parse node list JSON",
 			"context", kubeCtx.Name, "error", err)
 		return cluster, nil
+	}
+
+	// Extract Kubernetes version from the first node.
+	if len(nodeList.Items) > 0 {
+		cluster.Version = nodeList.Items[0].Status.NodeInfo.KubeletVersion
 	}
 
 	// Build nodes slice and determine readiness.
@@ -114,7 +120,7 @@ func (k *KubectlClient) FetchCluster(ctx context.Context, kubeCtx KubeContextCon
 		}
 	}
 
-	// Step 3: Count pods per node.
+	// Step 3: Count pods per node and track pod status.
 	podListJSON, err := k.runKubectl(ctx, append(baseArgs, "get", "pods", "-A", "-o", "json"))
 	if err != nil {
 		k.logger.Info("failed to get pods, pod counts will be zero",
@@ -129,6 +135,10 @@ func (k *KubectlClient) FetchCluster(ctx context.Context, kubeCtx KubeContextCon
 			for i := range nodes {
 				nodes[i].PodCount = podCounts[nodes[i].Name]
 			}
+
+			// Count total and running pods.
+			cluster.TotalPods = len(podList.Items)
+			cluster.RunningPods = countRunningPods(podList)
 		}
 	}
 
@@ -239,8 +249,13 @@ type kubeNodeMetadata struct {
 }
 
 type kubeNodeStatus struct {
-	Conditions  []kubeNodeCondition   `json:"conditions"`
-	Allocatable kubeNodeAllocatable   `json:"allocatable"`
+	Conditions  []kubeNodeCondition `json:"conditions"`
+	Allocatable kubeNodeAllocatable `json:"allocatable"`
+	NodeInfo    kubeNodeInfo        `json:"nodeInfo"`
+}
+
+type kubeNodeInfo struct {
+	KubeletVersion string `json:"kubeletVersion"`
 }
 
 type kubeNodeCondition struct {
@@ -259,11 +274,16 @@ type kubePodList struct {
 }
 
 type kubePod struct {
-	Spec kubePodSpec `json:"spec"`
+	Spec   kubePodSpec   `json:"spec"`
+	Status kubePodStatus `json:"status"`
 }
 
 type kubePodSpec struct {
 	NodeName string `json:"nodeName"`
+}
+
+type kubePodStatus struct {
+	Phase string `json:"phase"`
 }
 
 type topMetrics struct {
@@ -336,6 +356,17 @@ func countPodsPerNode(podList kubePodList) map[string]int {
 		}
 	}
 	return counts
+}
+
+// countRunningPods counts the number of pods in Running phase.
+func countRunningPods(podList kubePodList) int {
+	count := 0
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == "Running" {
+			count++
+		}
+	}
+	return count
 }
 
 // parseAllocatable extracts the max pods value from a node's allocatable resources.

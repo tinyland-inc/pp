@@ -346,6 +346,9 @@ type KubernetesCluster struct {
 	// Name is the cluster identifier.
 	Name string `json:"name"`
 
+	// Context is the kubectl context name.
+	Context string `json:"context"`
+
 	// Platform identifies the provider (e.g., "civo", "doks", "rke2").
 	Platform string `json:"platform"`
 
@@ -366,6 +369,15 @@ type KubernetesCluster struct {
 
 	// ReadyNodes is the number of nodes in Ready state.
 	ReadyNodes int `json:"ready_nodes"`
+
+	// TotalPods is the total number of pods across all nodes.
+	TotalPods int `json:"total_pods"`
+
+	// RunningPods is the number of pods in Running state.
+	RunningPods int `json:"running_pods"`
+
+	// Version is the Kubernetes version (e.g., "v1.28.3").
+	Version string `json:"version,omitempty"`
 }
 
 // KubernetesNode represents a single node in a Kubernetes cluster.
@@ -830,7 +842,7 @@ func (b *BillingData) StarshipOutput() string {
 }
 
 // StarshipOutput generates a one-line string suitable for a Starship custom module.
-// Format: ts:online/total k8s:cluster_status
+// Format: ts:online/total k8s:cluster_name(nodes_ready/nodes_total, pods_running/pods_total)
 func (i *InfraStatus) StarshipOutput() string {
 	if i == nil {
 		return ""
@@ -843,7 +855,19 @@ func (i *InfraStatus) StarshipOutput() string {
 	}
 
 	for _, cluster := range i.Kubernetes {
-		parts = append(parts, fmt.Sprintf("k8s:%s:%s", cluster.Name, cluster.Status))
+		// Format: k8s:name(3/3 nodes, 45/48 pods)
+		var clusterPart string
+		if cluster.Status == "offline" {
+			clusterPart = fmt.Sprintf("k8s:%s(offline)", cluster.Name)
+		} else {
+			clusterPart = fmt.Sprintf("k8s:%s(%d/%d nodes, %d/%d pods)",
+				cluster.Name,
+				cluster.ReadyNodes,
+				cluster.TotalNodes,
+				cluster.RunningPods,
+				cluster.TotalPods)
+		}
+		parts = append(parts, clusterPart)
 	}
 
 	return strings.Join(parts, " ")

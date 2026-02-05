@@ -35,21 +35,24 @@ const healthyNodesJSON = `{
       "metadata": {"name": "node-1"},
       "status": {
         "conditions": [{"type": "Ready", "status": "True"}],
-        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"}
+        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     },
     {
       "metadata": {"name": "node-2"},
       "status": {
         "conditions": [{"type": "Ready", "status": "True"}],
-        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"}
+        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     },
     {
       "metadata": {"name": "node-3"},
       "status": {
         "conditions": [{"type": "Ready", "status": "True"}],
-        "allocatable": {"cpu": "8", "memory": "16Gi", "pods": "250"}
+        "allocatable": {"cpu": "8", "memory": "16Gi", "pods": "250"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     }
   ]
@@ -61,21 +64,24 @@ const degradedNodesJSON = `{
       "metadata": {"name": "node-1"},
       "status": {
         "conditions": [{"type": "Ready", "status": "True"}],
-        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"}
+        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     },
     {
       "metadata": {"name": "node-2"},
       "status": {
         "conditions": [{"type": "Ready", "status": "True"}],
-        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"}
+        "allocatable": {"cpu": "4", "memory": "8Gi", "pods": "110"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     },
     {
       "metadata": {"name": "node-3"},
       "status": {
         "conditions": [{"type": "Ready", "status": "False"}],
-        "allocatable": {"cpu": "8", "memory": "16Gi", "pods": "250"}
+        "allocatable": {"cpu": "8", "memory": "16Gi", "pods": "250"},
+        "nodeInfo": {"kubeletVersion": "v1.28.3"}
       }
     }
   ]
@@ -90,12 +96,12 @@ node-3   100m   5%    512Mi    10%
 
 const podsJSON = `{
   "items": [
-    {"spec": {"nodeName": "node-1"}},
-    {"spec": {"nodeName": "node-1"}},
-    {"spec": {"nodeName": "node-1"}},
-    {"spec": {"nodeName": "node-2"}},
-    {"spec": {"nodeName": "node-2"}},
-    {"spec": {"nodeName": "node-3"}}
+    {"spec": {"nodeName": "node-1"}, "status": {"phase": "Running"}},
+    {"spec": {"nodeName": "node-1"}, "status": {"phase": "Running"}},
+    {"spec": {"nodeName": "node-1"}, "status": {"phase": "Pending"}},
+    {"spec": {"nodeName": "node-2"}, "status": {"phase": "Running"}},
+    {"spec": {"nodeName": "node-2"}, "status": {"phase": "Running"}},
+    {"spec": {"nodeName": "node-3"}, "status": {"phase": "Running"}}
   ]
 }`
 
@@ -245,6 +251,24 @@ func TestFetchCluster_HealthyCluster(t *testing.T) {
 	// Verify API endpoint was parsed.
 	if cluster.APIEndpoint != "https://10.0.0.1:6443" {
 		t.Errorf("APIEndpoint = %q, want %q", cluster.APIEndpoint, "https://10.0.0.1:6443")
+	}
+
+	// Verify Kubernetes version.
+	if cluster.Version != "v1.28.3" {
+		t.Errorf("Version = %q, want %q", cluster.Version, "v1.28.3")
+	}
+
+	// Verify pod counts.
+	if cluster.TotalPods != 6 {
+		t.Errorf("TotalPods = %d, want 6", cluster.TotalPods)
+	}
+	if cluster.RunningPods != 5 {
+		t.Errorf("RunningPods = %d, want 5", cluster.RunningPods)
+	}
+
+	// Verify context is set.
+	if cluster.Context != "test-context" {
+		t.Errorf("Context = %q, want %q", cluster.Context, "test-context")
 	}
 }
 
@@ -804,6 +828,57 @@ func TestNewKubectlClient_NilLogger(t *testing.T) {
 	client := NewKubectlClient(nil)
 	if client == nil {
 		t.Fatal("NewKubectlClient(nil) returned nil")
+	}
+}
+
+func TestCountRunningPods(t *testing.T) {
+	tests := []struct {
+		name string
+		pods kubePodList
+		want int
+	}{
+		{
+			name: "all running",
+			pods: kubePodList{Items: []kubePod{
+				{Status: kubePodStatus{Phase: "Running"}},
+				{Status: kubePodStatus{Phase: "Running"}},
+				{Status: kubePodStatus{Phase: "Running"}},
+			}},
+			want: 3,
+		},
+		{
+			name: "mixed phases",
+			pods: kubePodList{Items: []kubePod{
+				{Status: kubePodStatus{Phase: "Running"}},
+				{Status: kubePodStatus{Phase: "Pending"}},
+				{Status: kubePodStatus{Phase: "Running"}},
+				{Status: kubePodStatus{Phase: "Failed"}},
+				{Status: kubePodStatus{Phase: "Running"}},
+			}},
+			want: 3,
+		},
+		{
+			name: "no running pods",
+			pods: kubePodList{Items: []kubePod{
+				{Status: kubePodStatus{Phase: "Pending"}},
+				{Status: kubePodStatus{Phase: "Failed"}},
+			}},
+			want: 0,
+		},
+		{
+			name: "empty pod list",
+			pods: kubePodList{Items: []kubePod{}},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := countRunningPods(tt.pods)
+			if result != tt.want {
+				t.Errorf("countRunningPods() = %d, want %d", result, tt.want)
+			}
+		})
 	}
 }
 
