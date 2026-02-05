@@ -1,8 +1,11 @@
 package layout
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+
+	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
 )
 
 // TestLayoutModeString verifies layout mode string representations.
@@ -254,7 +257,7 @@ func TestRenderCompact(t *testing.T) {
 		{Title: "Billing", Content: []string{"$142 this month"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 
 	// Should contain section titles.
 	if !strings.Contains(result.Output, "Claude") {
@@ -288,7 +291,7 @@ func TestRenderStandard(t *testing.T) {
 		{Title: "Billing", Content: []string{"$142 this month"}},
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 
 	// Should contain section titles.
 	if !strings.Contains(result.Output, "Claude") {
@@ -319,7 +322,7 @@ func TestRenderStandardNoImage(t *testing.T) {
 		{Title: "Claude", Content: []string{"personal: 45% (5h)"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 
 	// Should contain section content.
 	if !strings.Contains(result.Output, "Claude") {
@@ -345,7 +348,7 @@ func TestRenderWide(t *testing.T) {
 		{Title: "Infrastructure", Content: []string{"ts: 4/5 online"}},
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 
 	// Should contain all section titles.
 	for _, title := range []string{"Claude", "Billing", "Infrastructure"} {
@@ -374,11 +377,16 @@ func TestRenderUltraWide(t *testing.T) {
 		{Title: "Infrastructure", Content: []string{"ts: 4/5 online"}},
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 
-	// Should contain sparkline section.
+	// Should contain sparkline section (with nil billing, shows placeholder).
 	if !strings.Contains(result.Output, "Trends") {
 		t.Error("ultra-wide output missing sparkline section")
+	}
+
+	// With nil billing, should show "(no data)".
+	if !strings.Contains(result.Output, "(no data)") {
+		t.Error("ultra-wide output with nil billing should show (no data)")
 	}
 
 	// Should have 4-column layout (3 separators per line).
@@ -406,7 +414,7 @@ func TestRenderTruncation(t *testing.T) {
 		{Title: "Section 4", Content: []string{"line1", "line2", "line3"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 
 	lines := strings.Split(result.Output, "\n")
 	if len(lines) > 10 {
@@ -594,7 +602,7 @@ func TestComposeSideBySideAlignment(t *testing.T) {
 		{Title: "Test", Content: []string{"line1", "line2", "line3"}},
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	// Each line should have image padded to ImageCols + separator.
@@ -616,7 +624,7 @@ func TestComposeSideBySideImageTaller(t *testing.T) {
 		{Title: "Test", Content: []string{"line1", "line2"}},
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	// Should have at least as many lines as the image.
@@ -636,7 +644,7 @@ func TestComposeSideBySideInfoTaller(t *testing.T) {
 		{Title: "Test", Content: make([]string, 15)}, // Many lines.
 	}
 
-	result := layout.Render(imageContent, sections)
+	result := layout.Render(imageContent, sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	// Should have at least as many lines as the info panel.
@@ -667,7 +675,7 @@ func TestGracefulDegradation(t *testing.T) {
 				{Title: "Test", Content: []string{"content"}},
 			}
 
-			result := layout.Render("", sections)
+			result := layout.Render("", sections, nil)
 
 			// Should produce some output.
 			if result.Output == "" {
@@ -687,7 +695,7 @@ func TestColorEnabled(t *testing.T) {
 		{Title: "Test", Content: []string{"content"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 
 	// Should not contain ANSI escape codes.
 	if strings.Contains(result.Output, "\x1b[") {
@@ -712,7 +720,7 @@ func TestColorEnabledWithColors(t *testing.T) {
 		{Title: "Test", Content: []string{"content"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 
 	// Output should be non-empty regardless of color support.
 	if result.Output == "" {
@@ -751,7 +759,7 @@ func TestOutputFitsWithin80Columns(t *testing.T) {
 		{Title: "Billing", Content: []string{"$142 this month"}},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	for i, line := range lines {
@@ -775,7 +783,7 @@ func TestOutputFitsWithin24Rows(t *testing.T) {
 		{Title: "Section 3", Content: make([]string, 10)},
 	}
 
-	result := layout.Render("", sections)
+	result := layout.Render("", sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	if len(lines) > 24 {
@@ -911,5 +919,57 @@ func TestSectionTitleWithColor(t *testing.T) {
 	// Verify that the config correctly reflects color enabled.
 	if !layout.Config().ColorEnabled {
 		t.Error("ColorEnabled should be true in config")
+	}
+}
+
+// TestUltraWideMode_WithBillingData verifies sparklines render with real data.
+func TestUltraWideMode_WithBillingData(t *testing.T) {
+	cfg := NewResponsiveConfig(200, 80)
+	cfg.ColorEnabled = false
+	layout := NewResponsiveLayout(cfg)
+
+	imageContent := fakeImage(22, 15)
+	sections := []Section{
+		{Title: "Claude", Content: []string{"personal: 45% (5h)"}},
+		{Title: "Billing", Content: []string{"$142 this month"}},
+		{Title: "Infrastructure", Content: []string{"ts: 4/5 online"}},
+	}
+
+	// Create billing data with history
+	history := make([]collectors.DailySpend, 30)
+	for i := 0; i < 30; i++ {
+		history[i] = collectors.DailySpend{
+			Date:     "2026-01-" + strconv.Itoa(i+1),
+			SpendUSD: float64(100 + i*5),
+		}
+	}
+	billing := &collectors.BillingData{
+		History: &collectors.BillingHistory{
+			TotalHistory: history,
+		},
+	}
+
+	result := layout.Render(imageContent, sections, billing)
+
+	// Should contain Trends section
+	if !strings.Contains(result.Output, "Trends") {
+		t.Error("ultra-wide output with billing data missing Trends section")
+	}
+
+	// Should contain actual sparkline characters (▁▂▃▄▅▆▇█)
+	hasSparklineChars := false
+	for _, r := range result.Output {
+		if r >= '▁' && r <= '█' {
+			hasSparklineChars = true
+			break
+		}
+	}
+	if !hasSparklineChars {
+		t.Error("ultra-wide output with billing data should contain sparkline characters (▁▂▃▄▅▆▇█)")
+	}
+
+	// Should NOT contain placeholder text
+	if strings.Contains(result.Output, "[sparkline]") {
+		t.Error("ultra-wide output should not contain [sparkline] placeholder with real data")
 	}
 }

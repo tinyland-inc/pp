@@ -182,7 +182,7 @@ func TestOutputDimensions(t *testing.T) {
 				imageContent = createFakeImage(cfg.Columns.ImageCols, 15)
 			}
 
-			result := l.Render(imageContent, sections)
+			result := l.Render(imageContent, sections, nil)
 
 			// Check line count.
 			lines := strings.Split(result.Output, "\n")
@@ -212,7 +212,7 @@ func TestUnicodeOnlyMode(t *testing.T) {
 			l := layout.NewResponsiveLayout(cfg)
 
 			sections := createTestSections(true, true, true, false)
-			result := l.Render("", sections)
+			result := l.Render("", sections, nil)
 
 			// Should not contain image placeholder content.
 			if strings.Contains(result.Output, "XXXX") {
@@ -247,7 +247,7 @@ func TestMultiAccountClaude(t *testing.T) {
 				{Title: "Billing", Content: []string{"$142 this month"}},
 			}
 
-			result := l.Render("", sections)
+			result := l.Render("", sections, nil)
 
 			// Should contain all account info.
 			if !strings.Contains(result.Output, "personal") {
@@ -295,7 +295,7 @@ func TestErrorStateRendering(t *testing.T) {
 				},
 			}
 
-			result := l.Render("", sections)
+			result := l.Render("", sections, nil)
 
 			// Should contain error indicators.
 			if !strings.Contains(result.Output, "ERR") {
@@ -319,7 +319,7 @@ func TestTruncationIndicator(t *testing.T) {
 		{Title: "Section 4", Content: make([]string, 5)},
 	}
 
-	result := l.Render("", sections)
+	result := l.Render("", sections, nil)
 
 	if !result.Truncated {
 		t.Error("Truncated flag should be true when content exceeds height")
@@ -340,7 +340,7 @@ func TestColumnAlignmentStandard(t *testing.T) {
 	imageContent := createFakeImage(20, 10)
 	sections := createTestSections(true, true, true, false)
 
-	result := l.Render(imageContent, sections)
+	result := l.Render(imageContent, sections, nil)
 	lines := strings.Split(result.Output, "\n")
 
 	// Each line should have consistent column separator position.
@@ -360,7 +360,7 @@ func TestSparklineColumn(t *testing.T) {
 	imageContent := createFakeImage(22, 15)
 	sections := createTestSections(true, true, true, false)
 
-	result := l.Render(imageContent, sections)
+	result := l.Render(imageContent, sections, nil)
 
 	// Should have sparkline/trends section.
 	if !strings.Contains(result.Output, "Trends") {
@@ -411,7 +411,7 @@ func renderTestBanner(t *testing.T, cols, rows int, scenario struct {
 		imageContent = createFakeImage(cfg.Columns.ImageCols, 15)
 	}
 
-	result := l.Render(imageContent, sections)
+	result := l.Render(imageContent, sections, nil)
 	return result.Output
 }
 
@@ -800,7 +800,7 @@ func BenchmarkLayoutRenderCompact(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		l.Render("", sections)
+		l.Render("", sections, nil)
 	}
 }
 
@@ -814,7 +814,7 @@ func BenchmarkLayoutRenderStandard(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		l.Render(imageContent, sections)
+		l.Render(imageContent, sections, nil)
 	}
 }
 
@@ -828,7 +828,7 @@ func BenchmarkLayoutRenderWide(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		l.Render(imageContent, sections)
+		l.Render(imageContent, sections, nil)
 	}
 }
 
@@ -842,7 +842,7 @@ func BenchmarkLayoutRenderUltraWide(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		l.Render(imageContent, sections)
+		l.Render(imageContent, sections, nil)
 	}
 }
 

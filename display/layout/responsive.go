@@ -17,6 +17,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
+	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/widgets"
 )
 
 // LayoutMode represents one of the 4 supported terminal layout modes.
@@ -333,10 +335,11 @@ type RenderResult struct {
 // Render composes a complete layout from the given sections.
 // imageContent is the pre-rendered image string (may be empty).
 // sections are the content sections to display.
-func (l *ResponsiveLayout) Render(imageContent string, sections []Section) RenderResult {
+// billing is optional billing data for sparkline rendering.
+func (l *ResponsiveLayout) Render(imageContent string, sections []Section, billing *collectors.BillingData) RenderResult {
 	switch l.config.Mode {
 	case LayoutUltraWide:
-		return l.renderUltraWide(imageContent, sections)
+		return l.renderUltraWide(imageContent, sections, billing)
 	case LayoutWide:
 		return l.renderWide(imageContent, sections)
 	case LayoutStandard:
@@ -420,7 +423,7 @@ func (l *ResponsiveLayout) renderWide(imageContent string, sections []Section) R
 }
 
 // renderUltraWide renders content in ultra-wide (4-column) mode.
-func (l *ResponsiveLayout) renderUltraWide(imageContent string, sections []Section) RenderResult {
+func (l *ResponsiveLayout) renderUltraWide(imageContent string, sections []Section, billing *collectors.BillingData) RenderResult {
 	// For ultra-wide, split sections into main and info.
 	mainSections := sections
 	var infoSections []Section
@@ -432,8 +435,8 @@ func (l *ResponsiveLayout) renderUltraWide(imageContent string, sections []Secti
 	mainLines := l.buildInfoPanel(mainSections)
 	infoLines := l.buildInfoPanel(infoSections)
 
-	// Generate sparkline placeholder (actual sparkline data would come from caller).
-	sparklineLines := l.buildSparklinePlaceholder()
+	// Generate sparklines from billing history.
+	sparklineLines := l.buildActualSparklines(billing)
 
 	// 4-column: image | main | info | sparklines.
 	if imageContent == "" || !l.config.Features.ShowImage {
@@ -466,7 +469,7 @@ func (l *ResponsiveLayout) buildInfoPanel(sections []Section) []string {
 }
 
 // buildSparklinePlaceholder builds placeholder sparkline content.
-// Actual sparkline data would be passed in from the caller.
+// DEPRECATED: Use buildActualSparklines() instead.
 func (l *ResponsiveLayout) buildSparklinePlaceholder() []string {
 	// This is a placeholder; actual sparklines would be rendered by the caller.
 	return []string{
@@ -475,6 +478,78 @@ func (l *ResponsiveLayout) buildSparklinePlaceholder() []string {
 		"  MEM: [sparkline]",
 		"  NET: [sparkline]",
 	}
+}
+
+// buildActualSparklines builds sparkline content from billing history data.
+func (l *ResponsiveLayout) buildActualSparklines(billing *collectors.BillingData) []string {
+	if billing == nil || billing.History == nil {
+		return []string{l.sectionTitle("Trends"), "  (no data)"}
+	}
+
+	lines := []string{l.sectionTitle("Trends")}
+
+	// Total spend sparkline (30-day history).
+	if len(billing.History.TotalHistory) > 0 {
+		values := collectors.GetSpendValues(billing.History.TotalHistory)
+		if len(values) > 0 {
+			sparkline := widgets.RenderSparkline(widgets.SparklineConfig{
+				Data:  values,
+				Width: 20,
+				Label: "Total",
+			})
+			lines = append(lines, "  "+sparkline)
+		}
+	}
+
+	// Per-provider sparklines (show top 2 providers by spend).
+	if len(billing.History.ProviderHistory) > 0 {
+		// Find top 2 providers by most recent spend.
+		type providerSpend struct {
+			name  string
+			spend float64
+		}
+		var providers []providerSpend
+		for name, history := range billing.History.ProviderHistory {
+			if len(history) > 0 {
+				providers = append(providers, providerSpend{
+					name:  name,
+					spend: history[len(history)-1].SpendUSD,
+				})
+			}
+		}
+
+		// Sort by spend (simple bubble sort for top 2).
+		for i := 0; i < len(providers); i++ {
+			for j := i + 1; j < len(providers); j++ {
+				if providers[j].spend > providers[i].spend {
+					providers[i], providers[j] = providers[j], providers[i]
+				}
+			}
+		}
+
+		// Show top 2 providers.
+		for i, p := range providers {
+			if i >= 2 {
+				break
+			}
+			history := billing.History.ProviderHistory[p.name]
+			values := collectors.GetSpendValues(history)
+			if len(values) > 0 {
+				sparkline := widgets.RenderSparkline(widgets.SparklineConfig{
+					Data:  values,
+					Width: 20,
+					Label: p.name,
+				})
+				lines = append(lines, "  "+sparkline)
+			}
+		}
+	}
+
+	if len(lines) == 1 {
+		lines = append(lines, "  (no history)")
+	}
+
+	return lines
 }
 
 // composeSideBySide places image and info side-by-side.

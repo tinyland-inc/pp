@@ -72,13 +72,13 @@ func (m *MockBanner) Generate(ctx context.Context) (string, error) {
 	responsiveCfg := layout.NewResponsiveConfig(width, height)
 	responsiveCfg.ColorEnabled = true
 
-	// Step 8: Build sections from mock data.
+	// Step 8: Build sections from mock data (no fastfetch in mock).
 	b := &Banner{config: m.config}
-	sections := b.buildSections(claude, billing, infra, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
+	sections := b.buildSections(claude, billing, infra, nil, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
 
 	// Step 9: Render using responsive layout.
 	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
-	result := responsiveLayout.Render(imageContent, sections)
+	result := responsiveLayout.Render(imageContent, sections, billing)
 
 	return result.Output, nil
 }

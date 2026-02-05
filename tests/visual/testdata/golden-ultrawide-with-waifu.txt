@@ -1,7 +1,7 @@
 XXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                                     │ Trends
-XXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   CPU: [sparkline]
-XXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │   MEM: [sparkline]
-XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │   NET: [sparkline]
+XXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   (no data)
+XXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │ 
 XXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                                   │ 
 XXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                                    │ 
 XXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                                    │ 

@@ -115,6 +115,8 @@ func (b *Banner) Generate(ctx context.Context) (string, error) {
 		claude, billing, infra, fastfetch = b.loadCachedDataWithFastfetch(store)
 	}
 
+	// Fastfetch data will be integrated into buildSections()
+
 	// Step 2: Evaluate system status.
 	evaluator := status.NewEvaluator(status.DefaultEvaluatorConfig())
 	systemStatus := evaluator.Evaluate(claude, billing, infra)
@@ -148,31 +150,24 @@ func (b *Banner) Generate(ctx context.Context) (string, error) {
 	// Step 6: Compute uptime string.
 	uptime := computeUptime()
 
-	// Step 7: Render the layout.
-	var layoutCfg LayoutConfig
-	if b.config.FastfetchEnabled && fastfetch != nil && !fastfetch.IsEmpty() {
-		// Use 3-column layout with fastfetch.
-		layoutCfg = ThreeColumnLayoutConfig(b.config.TermWidth, b.config.TermHeight)
-	} else {
-		layoutCfg = DefaultLayoutConfig()
-		layoutCfg.TermWidth = b.config.TermWidth
-		layoutCfg.TermHeight = b.config.TermHeight
-	}
-	layoutCfg.ShowImage = imageContent != ""
-	layoutCfg.Hostname = hostname
-	layoutCfg.ColorEnabled = true
-
-	layout := NewLayout(layoutCfg)
-	data := InfoData{
-		Claude:      claude,
-		Billing:     billing,
-		Infra:       infra,
-		Fastfetch:   fastfetch,
-		StatusLevel: systemStatus.Overall.String(),
-		Uptime:      uptime,
+	// Step 7: Build responsive layout configuration.
+	width := b.config.TermWidth
+	height := b.config.TermHeight
+	if width == 0 || height == 0 {
+		width, height = layout.DetectTerminalSize()
 	}
 
-	return layout.Render(imageContent, data), nil
+	responsiveCfg := layout.NewResponsiveConfig(width, height)
+	responsiveCfg.ColorEnabled = true
+
+	// Step 8: Build sections from collector data.
+	sections := b.buildSections(claude, billing, infra, fastfetch, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
+
+	// Step 9: Render using responsive layout.
+	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
+	result := responsiveLayout.Render(imageContent, sections, billing)
+
+	return result.Output, nil
 }
 
 // loadCachedData reads collector data from the cache store.
@@ -497,12 +492,12 @@ func (b *Banner) GenerateResponsive(ctx context.Context) (string, error) {
 		imageContent = ""
 	}
 
-	// Step 7: Build sections from data.
-	sections := b.buildSections(claude, billing, infra, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
+	// Step 7: Build sections from data (no fastfetch in this code path).
+	sections := b.buildSections(claude, billing, infra, nil, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
 
-	// Step 8: Render using responsive layout.
+	// Step 8: Render using responsive layout (no billing data in this code path).
 	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
-	result := responsiveLayout.Render(imageContent, sections)
+	result := responsiveLayout.Render(imageContent, sections, nil)
 
 	return result.Output, nil
 }
@@ -512,6 +507,7 @@ func (b *Banner) buildSections(
 	claude *collectors.ClaudeUsage,
 	billing *collectors.BillingData,
 	infra *collectors.InfraStatus,
+	fastfetch *collectors.FastfetchData,
 	hostname, statusLevel, uptime string,
 	features layout.LayoutFeatures,
 ) []layout.Section {
@@ -549,6 +545,15 @@ func (b *Banner) buildSections(
 		Title:   "Infrastructure",
 		Content: infraContent,
 	})
+
+	// System section (fastfetch).
+	if fastfetch != nil && !fastfetch.IsEmpty() {
+		fastfetchContent := b.formatFastfetchForSection(fastfetch)
+		sections = append(sections, layout.Section{
+			Title:   "System",
+			Content: fastfetchContent,
+		})
+	}
 
 	return sections
 }
@@ -664,6 +669,14 @@ func (b *Banner) formatInfraForSection(data *collectors.InfraStatus, showNodeMet
 	}
 
 	return lines
+}
+
+// formatFastfetchForSection formats fastfetch system info for a layout section.
+func (b *Banner) formatFastfetchForSection(data *collectors.FastfetchData) []string {
+	if data == nil || data.IsEmpty() {
+		return []string{"(no data)"}
+	}
+	return data.FormatCompact()
 }
 
 // join concatenates strings with a separator.
