@@ -45,6 +45,21 @@ type ProviderConfig struct {
 	APIKeyEnv string
 }
 
+// ProviderValidation holds the validation result for a single provider.
+type ProviderValidation struct {
+	// Provider identifies the provider name.
+	Provider string
+
+	// EnvVar is the environment variable name being checked.
+	EnvVar string
+
+	// Configured indicates whether the API key is present.
+	Configured bool
+
+	// ErrorReason provides additional context if validation failed.
+	ErrorReason string
+}
+
 // Package-level factory functions. These create the real client implementations
 // by default, but can be overridden in tests to inject mocks.
 var (
@@ -186,6 +201,34 @@ func (b *BillingCollector) Collect(ctx context.Context) (*collectors.CollectResu
 		},
 		Warnings: allWarnings,
 	}, nil
+}
+
+// ValidateBillingProviders checks if API keys are configured for all enabled
+// providers. Returns a slice of validation results, one per enabled provider.
+// This is useful for diagnostic commands and startup validation.
+func ValidateBillingProviders(providers []ProviderConfig) []ProviderValidation {
+	var results []ProviderValidation
+
+	for _, p := range providers {
+		if !p.Enabled {
+			continue
+		}
+
+		apiKey := getAPIKeyFromEnvOrFile(p.APIKeyEnv)
+		validation := ProviderValidation{
+			Provider:   p.Name,
+			EnvVar:     p.APIKeyEnv,
+			Configured: apiKey != "",
+		}
+
+		if !validation.Configured {
+			validation.ErrorReason = fmt.Sprintf("environment variable %q is empty", p.APIKeyEnv)
+		}
+
+		results = append(results, validation)
+	}
+
+	return results
 }
 
 // getAPIKeyFromEnvOrFile looks up an API key from environment variable

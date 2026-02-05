@@ -1,9 +1,10 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"gitlab.com/tinyland/lab/prompt-pulse/internal/format"
 )
 
 // LayoutSize represents a responsive breakpoint for terminal width.
@@ -74,79 +75,19 @@ func LayoutForSize(size LayoutSize, width int) LayoutConfig {
 	}
 }
 
-// truncateText truncates a string to maxWidth characters, appending "..."
-// if the string exceeds the limit. If maxWidth is less than 4, the string
-// is hard-truncated without an ellipsis suffix.
+// truncateText is a convenience wrapper for format.TruncateWithEllipsis.
 func truncateText(s string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return ""
-	}
-
-	runes := []rune(s)
-	if len(runes) <= maxWidth {
-		return s
-	}
-
-	if maxWidth < 4 {
-		return string(runes[:maxWidth])
-	}
-
-	return string(runes[:maxWidth-3]) + "..."
+	return format.TruncateWithEllipsis(s, maxWidth)
 }
 
-// formatRelativeTime formats a time.Time as a human-readable relative string.
-// Examples: "just now", "30s ago", "5m ago", "2h ago", "3d ago".
+// formatRelativeTime is a convenience wrapper for format.FormatTimeSince.
 func formatRelativeTime(t time.Time) string {
-	if t.IsZero() {
-		return "never"
-	}
-
-	d := time.Since(t)
-	if d < 0 {
-		d = -d
-	}
-
-	switch {
-	case d < 10*time.Second:
-		return "just now"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		days := int(d.Hours() / 24)
-		return fmt.Sprintf("%dd ago", days)
-	}
+	return format.FormatTimeSince(t)
 }
 
-// formatDuration renders a time.Duration as a concise human-readable string.
-// Examples: "1s", "5m 30s", "2h 15m", "3d 4h".
+// formatDuration is a convenience wrapper for format.FormatDuration.
 func formatDuration(d time.Duration) string {
-	if d < 0 {
-		d = -d
-	}
-
-	if d < time.Second {
-		return "0s"
-	}
-
-	days := int(d.Hours() / 24)
-	hours := int(d.Hours()) % 24
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
-
-	switch {
-	case days > 0:
-		return fmt.Sprintf("%dd %dh", days, hours)
-	case hours > 0:
-		return fmt.Sprintf("%dh %dm", hours, minutes)
-	case minutes > 0:
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	default:
-		return fmt.Sprintf("%ds", seconds)
-	}
+	return format.FormatDuration(d)
 }
 
 // horizontalRule returns a horizontal line of the given width using box-drawing

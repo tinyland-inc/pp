@@ -487,8 +487,8 @@ func TestCollect_ExpiredCredentials(t *testing.T) {
 		}
 
 		acct := data.Accounts[0]
-		if acct.Status != "auth_failed" {
-			t.Errorf("Status = %q, want auth_failed", acct.Status)
+		if acct.Status != "token_expired" {
+			t.Errorf("Status = %q, want token_expired", acct.Status)
 		}
 
 		if len(result.Warnings) != 1 {

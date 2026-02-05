@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
@@ -201,22 +202,93 @@ func windowToPeriod(w *usageWindowResponse) *collectors.UsagePeriod {
 // appropriate status string for ClaudeAccountUsage.Status.
 func StatusFromError(err error) string {
 	if err == nil {
-		return "ok"
+		return collectors.StatusOK
 	}
 
 	apiErr, ok := err.(*APIError)
 	if !ok {
-		return "error"
+		// Check for network errors
+		if isNetworkError(err) {
+			return collectors.StatusNetworkError
+		}
+		// Check for Cloudflare errors
+		if isCloudflareError(err) {
+			return collectors.StatusCloudflare
+		}
+		return collectors.StatusError
+	}
+
+	// Check if Cloudflare protection is active (403/503 with Cloudflare in body)
+	if (apiErr.StatusCode == http.StatusForbidden || apiErr.StatusCode == http.StatusServiceUnavailable) &&
+		isCloudflareBody(apiErr.Body) {
+		return collectors.StatusCloudflare
 	}
 
 	switch apiErr.StatusCode {
 	case http.StatusUnauthorized:
-		return "auth_failed"
+		return collectors.StatusAuthFailed
 	case http.StatusForbidden:
-		return "auth_failed"
+		return collectors.StatusAuthFailed
 	case http.StatusTooManyRequests:
-		return "rate_limited"
+		return collectors.StatusRateLimited
 	default:
-		return "error"
+		return collectors.StatusError
 	}
+}
+
+// isNetworkError checks if an error is a network-related error.
+func isNetworkError(err error) bool {
+	// Check for common network error strings
+	errStr := err.Error()
+	networkErrors := []string{
+		"network timeout",
+		"connection refused",
+		"connection reset",
+		"no such host",
+		"i/o timeout",
+		"EOF",
+		"broken pipe",
+	}
+	for _, netErr := range networkErrors {
+		if strings.Contains(strings.ToLower(errStr), netErr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCloudflareError checks if an error is related to Cloudflare protection.
+func isCloudflareError(err error) bool {
+	errStr := err.Error()
+	cloudflareErrors := []string{
+		"cloudflare",
+		"cf-ray",
+		"checking your browser",
+		"ddos protection",
+	}
+	for _, cfErr := range cloudflareErrors {
+		if strings.Contains(strings.ToLower(errStr), cfErr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCloudflareBody checks if a response body contains Cloudflare challenge markers.
+func isCloudflareBody(body string) bool {
+	cloudflareMarkers := []string{
+		"just a moment",
+		"checking your browser",
+		"cloudflare",
+		"cf-ray",
+		"enable javascript and cookies",
+		"ddos protection",
+	}
+	bodyLower := strings.ToLower(body)
+	for _, marker := range cloudflareMarkers {
+		if strings.Contains(bodyLower, marker) {
+			return true
+		}
+	}
+	return false
 }

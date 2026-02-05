@@ -14,8 +14,6 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/cache"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/billing"
-	"gitlab.com/tinyland/lab/prompt-pulse/collectors/claude"
-	"gitlab.com/tinyland/lab/prompt-pulse/collectors/infra"
 	"gitlab.com/tinyland/lab/prompt-pulse/config"
 )
 
@@ -737,7 +735,3 @@ func TestDaemon_CollectOne_Error(t *testing.T) {
 	}
 }
 
-// Compile-time checks to ensure the unused import variables are referenced.
-var _ = claude.AccountConfig{}
-var _ = billing.ProviderConfig{}
-var _ = infra.InfraCollectorConfig{}

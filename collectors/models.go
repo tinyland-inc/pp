@@ -289,16 +289,6 @@ type DailySpend struct {
 	SpendUSD float64 `json:"spend_usd"`
 }
 
-// ProviderBudgetConfig holds budget configuration for a single provider.
-type ProviderBudgetConfig struct {
-	// Provider identifies the cloud service.
-	Provider string `json:"provider"`
-	// MonthlyBudgetUSD is the monthly budget limit in USD.
-	MonthlyBudgetUSD float64 `json:"monthly_budget_usd"`
-	// AlertThreshold is the percentage (0-100) at which to trigger warnings.
-	AlertThreshold float64 `json:"alert_threshold"`
-}
-
 // GetSpendValues extracts the SpendUSD values from a DailySpend slice for sparkline rendering.
 func GetSpendValues(history []DailySpend) []float64 {
 	if len(history) == 0 {
@@ -903,7 +893,10 @@ func (n *TailscaleNode) HasHighUtilization() bool {
 // ========== Fastfetch Models ==========
 
 // FastfetchModule represents a single fastfetch output module.
-// This is a re-export for cache compatibility.
+// NOTE: This is intentionally duplicated from collectors/fastfetch/types.go
+// to maintain cache compatibility without creating an import cycle.
+// The fastfetch package imports collectors for the Collector interface,
+// so we cannot import fastfetch here.
 type FastfetchModule struct {
 	Type   string `json:"type"`
 	Key    string `json:"key,omitempty"`
@@ -912,7 +905,8 @@ type FastfetchModule struct {
 }
 
 // FastfetchData holds system information collected via fastfetch.
-// This is a re-export for cache compatibility.
+// NOTE: This is intentionally duplicated from collectors/fastfetch/types.go
+// to maintain cache compatibility without creating an import cycle.
 type FastfetchData struct {
 	OS        FastfetchModule `json:"os"`
 	Host      FastfetchModule `json:"host"`

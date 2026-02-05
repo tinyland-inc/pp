@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -894,4 +895,128 @@ func TestBillingCollector_MixedEnabledDisabled(t *testing.T) {
 			t.Errorf("Provider = %q, want civo", data.Providers[0].Provider)
 		}
 	})
+}
+
+// --- Validation Function Tests ---
+
+func TestValidateBillingProviders_AllConfigured(t *testing.T) {
+	t.Setenv("TEST_CIVO_KEY_VAL", "fake-civo-key")
+	t.Setenv("TEST_DO_TOKEN_VAL", "fake-do-token")
+
+	providers := []ProviderConfig{
+		{Name: "civo", Enabled: true, APIKeyEnv: "TEST_CIVO_KEY_VAL"},
+		{Name: "digitalocean", Enabled: true, APIKeyEnv: "TEST_DO_TOKEN_VAL"},
+	}
+
+	validations := ValidateBillingProviders(providers)
+
+	if len(validations) != 2 {
+		t.Fatalf("got %d validations, want 2", len(validations))
+	}
+
+	for _, v := range validations {
+		if !v.Configured {
+			t.Errorf("provider %q: Configured = false, want true", v.Provider)
+		}
+		if v.ErrorReason != "" {
+			t.Errorf("provider %q: ErrorReason = %q, want empty", v.Provider, v.ErrorReason)
+		}
+	}
+}
+
+func TestValidateBillingProviders_SomeMissing(t *testing.T) {
+	t.Setenv("TEST_CIVO_KEY_VAL2", "fake-civo-key")
+	t.Setenv("TEST_DO_TOKEN_VAL2", "") // Explicitly empty
+
+	providers := []ProviderConfig{
+		{Name: "civo", Enabled: true, APIKeyEnv: "TEST_CIVO_KEY_VAL2"},
+		{Name: "digitalocean", Enabled: true, APIKeyEnv: "TEST_DO_TOKEN_VAL2"},
+	}
+
+	validations := ValidateBillingProviders(providers)
+
+	if len(validations) != 2 {
+		t.Fatalf("got %d validations, want 2", len(validations))
+	}
+
+	// Civo should be configured
+	civo := validations[0]
+	if civo.Provider != "civo" {
+		t.Errorf("validations[0].Provider = %q, want civo", civo.Provider)
+	}
+	if !civo.Configured {
+		t.Errorf("civo: Configured = false, want true")
+	}
+
+	// DigitalOcean should NOT be configured
+	do := validations[1]
+	if do.Provider != "digitalocean" {
+		t.Errorf("validations[1].Provider = %q, want digitalocean", do.Provider)
+	}
+	if do.Configured {
+		t.Errorf("digitalocean: Configured = true, want false")
+	}
+	if do.ErrorReason == "" {
+		t.Error("digitalocean: ErrorReason is empty, want non-empty")
+	}
+}
+
+func TestValidateBillingProviders_DisabledSkipped(t *testing.T) {
+	t.Setenv("TEST_CIVO_KEY_VAL3", "fake-key")
+
+	providers := []ProviderConfig{
+		{Name: "civo", Enabled: true, APIKeyEnv: "TEST_CIVO_KEY_VAL3"},
+		{Name: "digitalocean", Enabled: false, APIKeyEnv: "TEST_DO_TOKEN_VAL3"},
+	}
+
+	validations := ValidateBillingProviders(providers)
+
+	// Only enabled provider should be validated
+	if len(validations) != 1 {
+		t.Fatalf("got %d validations, want 1 (disabled provider should be skipped)", len(validations))
+	}
+
+	if validations[0].Provider != "civo" {
+		t.Errorf("validations[0].Provider = %q, want civo", validations[0].Provider)
+	}
+}
+
+func TestValidateBillingProviders_EmptyList(t *testing.T) {
+	validations := ValidateBillingProviders(nil)
+
+	if len(validations) != 0 {
+		t.Errorf("got %d validations, want 0 for nil providers", len(validations))
+	}
+
+	validations = ValidateBillingProviders([]ProviderConfig{})
+
+	if len(validations) != 0 {
+		t.Errorf("got %d validations, want 0 for empty providers", len(validations))
+	}
+}
+
+func TestValidateBillingProviders_FileBasedCredentials(t *testing.T) {
+	// Create a temporary file with a secret
+	tmpFile := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(tmpFile, []byte("  file-based-secret\n"), 0600); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	// Set the _FILE variant environment variable
+	t.Setenv("TEST_CIVO_KEY_VAL_FILE", tmpFile)
+
+	providers := []ProviderConfig{
+		{Name: "civo", Enabled: true, APIKeyEnv: "TEST_CIVO_KEY_VAL"},
+	}
+
+	validations := ValidateBillingProviders(providers)
+
+	if len(validations) != 1 {
+		t.Fatalf("got %d validations, want 1", len(validations))
+	}
+
+	v := validations[0]
+	if !v.Configured {
+		t.Errorf("Configured = false, want true (file-based credential should be detected)")
+	}
 }

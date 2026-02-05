@@ -263,9 +263,10 @@ func (c *ClaudeCollector) collectAccount(ctx context.Context, acct AccountConfig
 	default:
 		return accountResult{
 			usage: collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   acct.Type,
-				Status: "error",
+				Name:        acct.Name,
+				Type:        acct.Type,
+				Status:      collectors.StatusError,
+				ErrorReason: fmt.Sprintf("unknown type %q", acct.Type),
 			},
 			warnings: []string{fmt.Sprintf("account %q: unknown type %q", acct.Name, acct.Type)},
 		}
@@ -282,9 +283,10 @@ func (c *ClaudeCollector) collectSubscription(ctx context.Context, acct AccountC
 		c.logger.Warn("failed to load credentials", "account", acct.Name, "error", err)
 		return accountResult{
 			usage: collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   "subscription",
-				Status: "auth_failed",
+				Name:        acct.Name,
+				Type:        "subscription",
+				Status:      collectors.StatusAuthFailed,
+				ErrorReason: fmt.Sprintf("failed to load credentials: %v", err),
 			},
 			warnings: []string{fmt.Sprintf("account %q: failed to load credentials: %v", acct.Name, err)},
 		}
@@ -299,9 +301,10 @@ func (c *ClaudeCollector) collectSubscription(ctx context.Context, acct AccountC
 			c.logger.Warn("no refresh token available", "account", acct.Name)
 			return accountResult{
 				usage: collectors.ClaudeAccountUsage{
-					Name:   acct.Name,
-					Type:   "subscription",
-					Status: "auth_failed",
+					Name:        acct.Name,
+					Type:        "subscription",
+					Status:      collectors.StatusTokenExpired,
+					ErrorReason: fmt.Sprintf("OAuth token expired at %s, no refresh token", expiresAt.Format(time.RFC3339)),
 				},
 				warnings: []string{fmt.Sprintf("account %q: OAuth credentials expired at %s and no refresh token available", acct.Name, expiresAt.Format(time.RFC3339))},
 			}
@@ -315,9 +318,10 @@ func (c *ClaudeCollector) collectSubscription(ctx context.Context, acct AccountC
 			if creds.IsExpired() {
 				return accountResult{
 					usage: collectors.ClaudeAccountUsage{
-						Name:   acct.Name,
-						Type:   "subscription",
-						Status: "auth_failed",
+						Name:        acct.Name,
+						Type:        "subscription",
+						Status:      collectors.StatusTokenExpired,
+						ErrorReason: fmt.Sprintf("token refresh failed: %v", err),
 					},
 					warnings: []string{fmt.Sprintf("account %q: token refresh failed: %v", acct.Name, err)},
 				}
@@ -343,13 +347,14 @@ func (c *ClaudeCollector) collectSubscription(ctx context.Context, acct AccountC
 		status := StatusFromError(err)
 
 		// If rate limited or auth failed, report that status directly
-		if status == "rate_limited" || status == "auth_failed" {
+		if status == collectors.StatusRateLimited || status == collectors.StatusAuthFailed {
 			c.logger.Warn("subscription account error", "account", acct.Name, "status", status, "error", err)
 			usage = collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   "subscription",
-				Tier:   creds.NormalizeTier(),
-				Status: status,
+				Name:        acct.Name,
+				Type:        "subscription",
+				Tier:        creds.NormalizeTier(),
+				Status:      status,
+				ErrorReason: err.Error(),
 			}
 			warnings = []string{fmt.Sprintf("account %q: %v", acct.Name, err)}
 		} else {
@@ -402,9 +407,10 @@ func (c *ClaudeCollector) collectAPI(ctx context.Context, acct AccountConfig) ac
 		c.logger.Warn("API key not found in environment", "account", acct.Name, "env_var", acct.APIKeyEnv)
 		return accountResult{
 			usage: collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   "api",
-				Status: "auth_failed",
+				Name:        acct.Name,
+				Type:        "api",
+				Status:      collectors.StatusAuthFailed,
+				ErrorReason: fmt.Sprintf("environment variable %q is empty", acct.APIKeyEnv),
 			},
 			warnings: []string{fmt.Sprintf("account %q: environment variable %q is empty", acct.Name, acct.APIKeyEnv)},
 		}
@@ -418,9 +424,10 @@ func (c *ClaudeCollector) collectAPI(ctx context.Context, acct AccountConfig) ac
 		c.logger.Warn("failed to fetch rate limits", "account", acct.Name, "status", status, "error", err)
 		return accountResult{
 			usage: collectors.ClaudeAccountUsage{
-				Name:   acct.Name,
-				Type:   "api",
-				Status: status,
+				Name:        acct.Name,
+				Type:        "api",
+				Status:      status,
+				ErrorReason: err.Error(),
 			},
 			warnings: []string{fmt.Sprintf("account %q: %v", acct.Name, err)},
 		}
@@ -430,7 +437,7 @@ func (c *ClaudeCollector) collectAPI(ctx context.Context, acct AccountConfig) ac
 	usage.Name = acct.Name
 	usage.Type = "api"
 	if usage.Status == "" {
-		usage.Status = "ok"
+		usage.Status = collectors.StatusOK
 	}
 	if usage.Tier == "" {
 		usage.Tier = "unknown"

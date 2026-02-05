@@ -63,6 +63,27 @@ func newDaemon(cfg *config.Config, logger *slog.Logger) (*daemon, error) {
 	billingCollector := billing.NewBillingCollector(billingProviders, logger)
 	registry.Register(billingCollector)
 
+	// Validate billing provider configuration at startup.
+	billingValidations := billing.ValidateBillingProviders(billingProviders)
+	var unconfiguredCount int
+	for _, v := range billingValidations {
+		if !v.Configured {
+			logger.Warn("billing provider not configured",
+				"provider", v.Provider,
+				"env_var", v.EnvVar,
+				"reason", v.ErrorReason,
+			)
+			unconfiguredCount++
+		}
+	}
+	if unconfiguredCount > 0 {
+		logger.Warn("some billing providers are not configured",
+			"unconfigured_count", unconfiguredCount,
+			"total_providers", len(billingValidations),
+			"help", "run 'prompt-pulse --billing-check' for details",
+		)
+	}
+
 	// Register infrastructure collector.
 	infraCfg := configToInfraConfig(cfg)
 	infraCollector := infra.NewInfraCollector(infraCfg, logger)
