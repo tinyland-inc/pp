@@ -20,11 +20,13 @@
 //	-keys             Show all keybindings
 //	-mode string      Filter keybindings by mode (tui|shell|starship) (with -keys)
 //	-format string    Output format for --keys (table|json)
+//	-theme string     Theme preset (monitoring|minimal|full|auto) (default: auto)
 //	-config string    Path to configuration file (default: ~/.config/prompt-pulse/config.yaml)
 //	-use-mocks        Use mock data instead of real API calls (for testing)
 //	-mock-accounts int Number of mock Claude accounts to generate (default: 3)
 //	-verbose          Enable verbose logging
 //	-version          Print version and exit
+//	-man              Print man page to stdout in roff format
 package main
 
 import (
@@ -45,7 +47,9 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/config"
 	"gitlab.com/tinyland/lab/prompt-pulse/display/banner"
+	ppcolor "gitlab.com/tinyland/lab/prompt-pulse/display/color"
 	"gitlab.com/tinyland/lab/prompt-pulse/display/starship"
+	"gitlab.com/tinyland/lab/prompt-pulse/docs/manpage"
 	"gitlab.com/tinyland/lab/prompt-pulse/display/tui"
 	"gitlab.com/tinyland/lab/prompt-pulse/shell"
 	"gitlab.com/tinyland/lab/prompt-pulse/tests/mocks"
@@ -82,16 +86,28 @@ func main() {
 		showKeys         = flag.Bool("keys", false, "Show all keybindings")
 		keysMode         = flag.String("mode", "", "Filter keybindings by mode (tui|shell|starship)")
 		keysFormat       = flag.String("format", "table", "Output format for --keys (table|json)")
+		themeFlag        = flag.String("theme", "auto", "Theme preset (monitoring|minimal|full|auto)")
 		useMocks         = flag.Bool("use-mocks", false, "Use mock data instead of real API calls (for testing)")
 		mockAccounts     = flag.Int("mock-accounts", 3, "Number of mock Claude accounts to generate (with -use-mocks)")
 		mockSeed         = flag.Int64("mock-seed", 0, "Random seed for mock data (0 = random)")
 		verbose          = flag.Bool("verbose", false, "Enable verbose logging")
 		showVersion      = flag.Bool("version", false, "Print version and exit")
+		showMan          = flag.Bool("man", false, "Print man page to stdout in roff format")
 	)
 	flag.Parse()
 
+	// Apply NO_COLOR / pipe detection early, before any styled output.
+	// This sets lipgloss to Ascii profile when color should be suppressed.
+	colorEnabled := ppcolor.Apply()
+
 	if *showVersion {
 		fmt.Printf("prompt-pulse %s (%s) built %s\n", version, commit, date)
+		os.Exit(0)
+	}
+
+	// Handle --man flag (doesn't require config).
+	if *showMan {
+		fmt.Print(manpage.Generate(version, commit, date))
 		os.Exit(0)
 	}
 
@@ -150,6 +166,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Resolve theme: --theme flag overrides config file setting.
+	// "auto" means use the config file value (or default "monitoring").
+	themeName := cfg.Display.Theme
+	if *themeFlag != "auto" {
+		themeName = *themeFlag
+	}
+	// Apply theme preset to TUI styles.
+	tui.ApplyTheme(tui.GetThemePreset(themeName))
 
 	// Handle --health flag (requires config for cache dir).
 	if *runHealth {
@@ -291,6 +316,7 @@ func main() {
 			WaifuSessionID:   *sessionID,
 			WaifuMaxSessions: maxSessions,
 			FastfetchEnabled: fastfetchEnabled,
+			ColorEnabled:     colorEnabled,
 			TermWidth:        width,
 			TermHeight:       height,
 			Logger:           logger,
@@ -311,6 +337,10 @@ func main() {
 		if err != nil {
 			logger.Error("banner generation failed", "error", err)
 			os.Exit(1)
+		}
+		// Safety net: strip any residual ANSI sequences when color is disabled.
+		if !colorEnabled {
+			output = ppcolor.StripANSI(output)
 		}
 		fmt.Print(output)
 

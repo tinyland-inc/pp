@@ -70,7 +70,7 @@ func (m *MockBanner) Generate(ctx context.Context) (string, error) {
 	}
 
 	responsiveCfg := layout.NewResponsiveConfig(width, height)
-	responsiveCfg.ColorEnabled = true
+	responsiveCfg.ColorEnabled = m.config.ColorEnabled
 
 	// Step 8: Build sections from mock data (no fastfetch or sysmetrics in mock).
 	b := &Banner{config: m.config}

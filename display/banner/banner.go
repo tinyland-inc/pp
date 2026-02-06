@@ -50,6 +50,9 @@ type BannerConfig struct {
 	TermWidth int
 	// TermHeight overrides terminal height detection.
 	TermHeight int
+	// ColorEnabled enables ANSI color output. When false, all output is plain text.
+	// This is set to false when NO_COLOR is set or stdout is not a terminal.
+	ColorEnabled bool
 	// Logger for banner operations.
 	Logger *slog.Logger
 }
@@ -66,6 +69,7 @@ func DefaultBannerConfig() BannerConfig {
 		WaifuCacheTTL:    24 * time.Hour,
 		WaifuMaxCacheMB:  50,
 		WaifuMaxSessions: waifu.DefaultMaxSessions,
+		ColorEnabled:     true,
 		TermWidth:        80,
 		TermHeight:       24,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -160,7 +164,7 @@ func (b *Banner) Generate(ctx context.Context) (string, error) {
 	}
 
 	responsiveCfg := layout.NewResponsiveConfig(width, height)
-	responsiveCfg.ColorEnabled = true
+	responsiveCfg.ColorEnabled = b.config.ColorEnabled
 
 	// Step 8: Build sections from collector data.
 	sections := b.buildSections(claude, billing, infra, fastfetch, sysmetrics, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
@@ -495,7 +499,7 @@ func (b *Banner) GenerateResponsive(ctx context.Context) (string, error) {
 	}
 
 	responsiveCfg := layout.NewResponsiveConfig(width, height)
-	responsiveCfg.ColorEnabled = true
+	responsiveCfg.ColorEnabled = b.config.ColorEnabled
 
 	// Only show image if enabled in the layout mode.
 	if !responsiveCfg.Features.ShowImage {
