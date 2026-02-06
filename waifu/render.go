@@ -1,13 +1,11 @@
 package waifu
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"image/color"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -190,40 +188,13 @@ func renderNone() (string, error) {
 }
 
 // renderChafa uses the chafa CLI tool for auto-detected terminal graphics.
+// Delegates to the high-quality render.RenderWithChafa() with full ChafaConfig support
+// (truecolor, all symbols, dithering) instead of the simple --size/--format flags.
 func renderChafa(imageData []byte, cols, rows int) (string, error) {
-	// Check if chafa is available
-	chafaPath, err := exec.LookPath("chafa")
-	if err != nil {
-		return "", fmt.Errorf("chafa not found: %w", err)
-	}
-
-	// Create temp file
-	tmpFile, err := os.CreateTemp("", "waifu-*.png")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(imageData); err != nil {
-		tmpFile.Close()
-		return "", err
-	}
-	tmpFile.Close()
-
-	// Run chafa with auto-detection
-	cmd := exec.Command(chafaPath,
-		"--size", fmt.Sprintf("%dx%d", cols, rows),
-		"--format", "auto", // Auto-detect Kitty/iTerm2/Sixel/symbols
-		tmpFile.Name())
-
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("chafa failed: %w", err)
-	}
-
-	return stdout.String(), nil
+	cfg := render.DefaultChafaConfig()
+	cfg.Cols = cols
+	cfg.Rows = rows
+	return render.RenderWithChafa(imageData, cfg)
 }
 
 // colorToRGBA converts a color.Color to uint8 RGBA components.
@@ -364,14 +335,16 @@ func (r *OptimizedRenderer) Render(sessionID string, imageData []byte, cols, row
 	protocol := DetectProtocol()
 	protocolStr := protocolToString(protocol)
 
-	// Check rendered cache first
-	if cached, exists := r.renderedCache.Get(sessionID, protocolStr, cols, rows); exists {
-		return RenderOutput{
-			Output:       cached.Output,
-			Protocol:     cached.Protocol,
-			FromCache:    true,
-			RenderTimeMs: timeSinceMs(start),
-		}, nil
+	// Check rendered cache first - try detected protocol and chafa (renderWithFallback may use either)
+	for _, proto := range []string{protocolStr, "chafa"} {
+		if cached, exists := r.renderedCache.Get(sessionID, proto, cols, rows); exists {
+			return RenderOutput{
+				Output:       cached.Output,
+				Protocol:     cached.Protocol,
+				FromCache:    true,
+				RenderTimeMs: timeSinceMs(start),
+			}, nil
+		}
 	}
 
 	// Not in cache, perform actual rendering with fallback chain

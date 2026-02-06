@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/widgets"
 )
 
 // Color palette matching the TUI theme (display/tui/theme.go).
@@ -78,16 +79,19 @@ func DetermineLayoutMode(termWidth int) LayoutMode {
 }
 
 // GetWaifuSize returns the appropriate waifu dimensions for the layout mode.
+// Sizes are scaled to match the ImageCols in responsive.go columnsForMode().
 func GetWaifuSize(mode LayoutMode) WaifuSize {
 	switch mode {
 	case LayoutCompact:
-		return WaifuSize{Cols: 16, Rows: 8} // Small
-	case LayoutStandard, LayoutWide:
-		return WaifuSize{Cols: 22, Rows: 11} // Medium
+		return WaifuSize{Cols: 20, Rows: 10}
+	case LayoutStandard:
+		return WaifuSize{Cols: 28, Rows: 14}
+	case LayoutWide:
+		return WaifuSize{Cols: 36, Rows: 18}
 	case LayoutUltraWide:
-		return WaifuSize{Cols: 32, Rows: 16} // Large
+		return WaifuSize{Cols: 48, Rows: 24}
 	default:
-		return WaifuSize{Cols: 22, Rows: 11} // Default to medium
+		return WaifuSize{Cols: 28, Rows: 14}
 	}
 }
 
@@ -332,6 +336,7 @@ func (l *Layout) renderInfoPanel(data InfoData) string {
 }
 
 // renderHeader returns the top header line with hostname and status.
+// Uses the StatusIndicator widget for colored dot icons.
 func (l *Layout) renderHeader(hostname, statusLevel string) string {
 	statusText := statusLevel
 	if statusText == "" {
@@ -347,12 +352,9 @@ func (l *Layout) renderHeader(hostname, statusLevel string) string {
 		Foreground(colorPrimary).
 		Render(hostname)
 
-	statusStyled := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(l.statusColor(statusLevel)).
-		Render(statusText)
+	statusIndicator := widgets.RenderStatusFromString(statusText)
 
-	return fmt.Sprintf("%s :: %s", hostnameStyled, statusStyled)
+	return fmt.Sprintf("%s :: %s", hostnameStyled, statusIndicator)
 }
 
 // renderClaudeSummary returns a compact Claude usage summary.
@@ -364,7 +366,7 @@ func (l *Layout) renderClaudeSummary(data *collectors.ClaudeUsage) []string {
 
 	var lines []string
 	for _, acct := range data.Accounts {
-		if acct.Status != "ok" {
+		if acct.Status != "ok" && acct.Status != "active" {
 			lines = append(lines, fmt.Sprintf("  %s: ERR", acct.Name))
 			continue
 		}
@@ -474,6 +476,11 @@ func (l *Layout) formatAPIAccount(acct collectors.ClaudeAccountUsage) string {
 func (l *Layout) renderBillingSummary(data *collectors.BillingData) []string {
 	if data == nil {
 		return []string{l.styledMuted("  (no data)")}
+	}
+
+	// If all providers errored and spend is zero, show N/A instead of misleading $0
+	if data.Total.SuccessCount == 0 && data.Total.ErrorCount > 0 {
+		return []string{l.styledMuted(fmt.Sprintf("  N/A (%d providers unreachable)", data.Total.ErrorCount))}
 	}
 
 	line := fmt.Sprintf("  $%.0f this month", data.Total.CurrentMonthUSD)

@@ -846,3 +846,76 @@ func randFloat() float64 {
 func randFloat32() float32 {
 	return rng.Float32()
 }
+
+// ========== Fastfetch Mock Data ==========
+
+// MockFastfetchData generates realistic system information data.
+func MockFastfetchData() *collectors.FastfetchData {
+	return &collectors.FastfetchData{
+		OS: collectors.FastfetchModule{
+			Type:   "OS",
+			Key:    "OS",
+			Result: "Rocky Linux 10.1 (Blue Onyx) x86_64",
+		},
+		Host: collectors.FastfetchModule{
+			Type:   "Host",
+			Key:    "Host",
+			Result: "Lenovo ThinkPad X1 Yoga Gen 3",
+		},
+		Kernel: collectors.FastfetchModule{
+			Type:   "Kernel",
+			Key:    "Kernel",
+			Result: "6.12.0-124.29.1.el10_1.x86_64",
+		},
+		Uptime: collectors.FastfetchModule{
+			Type:   "Uptime",
+			Key:    "Uptime",
+			Result: "3 days, 14 hours, 22 mins",
+		},
+		CPU: collectors.FastfetchModule{
+			Type:   "CPU",
+			Key:    "CPU",
+			Result: "Intel i7-8550U (8) @ 4.00 GHz",
+		},
+		GPU: collectors.FastfetchModule{
+			Type:   "GPU",
+			Key:    "GPU",
+			Result: "Intel UHD Graphics 620",
+		},
+		Memory: collectors.FastfetchModule{
+			Type:   "Memory",
+			Key:    "Memory",
+			Result: "5.2 GiB / 15.4 GiB (34%)",
+		},
+		Disk: collectors.FastfetchModule{
+			Type:   "Disk",
+			Key:    "Disk",
+			Result: "98.3 GiB / 229.6 GiB (43%)",
+		},
+		Packages: collectors.FastfetchModule{
+			Type:   "Packages",
+			Key:    "Packages",
+			Result: "1247 (rpm), 892 (nix)",
+		},
+		Shell: collectors.FastfetchModule{
+			Type:   "Shell",
+			Key:    "Shell",
+			Result: "bash 5.2.26",
+		},
+		Terminal: collectors.FastfetchModule{
+			Type:   "Terminal",
+			Key:    "Terminal",
+			Result: "Alacritty 0.15.1",
+		},
+		LocalIP: collectors.FastfetchModule{
+			Type:   "LocalIP",
+			Key:    "Local IP",
+			Result: "100.64.0.3 (tailscale0)",
+		},
+	}
+}
+
+// MockFastfetchDataEmpty generates empty fastfetch data.
+func MockFastfetchDataEmpty() *collectors.FastfetchData {
+	return &collectors.FastfetchData{}
+}

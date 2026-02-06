@@ -42,13 +42,29 @@ func TestNewModel(t *testing.T) {
 	if m.infra != nil {
 		t.Error("expected infra to be nil")
 	}
+	if m.fastfetch != nil {
+		t.Error("expected fastfetch to be nil")
+	}
 }
 
 func TestModel_Init(t *testing.T) {
+	// NewModel() has no cacheDir, so Init returns nil.
 	m := NewModel()
 	cmd := m.Init()
 	if cmd != nil {
-		t.Error("expected Init() to return nil Cmd")
+		t.Error("expected Init() to return nil Cmd when no cacheDir configured")
+	}
+}
+
+func TestModel_Init_WithConfig(t *testing.T) {
+	// NewModelWithConfig with a cacheDir should return a non-nil Cmd.
+	m := NewModelWithConfig(ModelConfig{
+		CacheDir: "/tmp/test-cache",
+		CacheTTL: 60,
+	})
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("expected Init() to return a Cmd when cacheDir is configured")
 	}
 }
 
@@ -89,22 +105,36 @@ func TestModel_Update_NextTab(t *testing.T) {
 		t.Errorf("expected TabInfra after second tab, got %d", m.activeTab)
 	}
 
-	// Infra -> Claude (wraps)
+	// Infra -> System
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	if m.activeTab != TabSystem {
+		t.Errorf("expected TabSystem after third tab, got %d", m.activeTab)
+	}
+
+	// System -> Claude (wraps)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(Model)
 	if m.activeTab != TabClaude {
-		t.Errorf("expected TabClaude after third tab (wrap), got %d", m.activeTab)
+		t.Errorf("expected TabClaude after fourth tab (wrap), got %d", m.activeTab)
 	}
 }
 
 func TestModel_Update_PrevTab(t *testing.T) {
 	m := NewModel()
 
-	// Claude -> Infra (wraps backward)
+	// Claude -> System (wraps backward)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = updated.(Model)
+	if m.activeTab != TabSystem {
+		t.Errorf("expected TabSystem after shift+tab from Claude, got %d", m.activeTab)
+	}
+
+	// System -> Infra
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = updated.(Model)
 	if m.activeTab != TabInfra {
-		t.Errorf("expected TabInfra after shift+tab from Claude, got %d", m.activeTab)
+		t.Errorf("expected TabInfra after shift+tab from System, got %d", m.activeTab)
 	}
 
 	// Infra -> Billing
@@ -130,12 +160,13 @@ func TestModel_Update_DirectTab(t *testing.T) {
 		{'1', TabClaude},
 		{'2', TabBilling},
 		{'3', TabInfra},
+		{'4', TabSystem},
 	}
 
 	for _, tt := range tests {
 		m := NewModel()
 		// Start from a different tab to ensure the jump works.
-		m.activeTab = TabInfra
+		m.activeTab = TabSystem
 
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tt.key}})
 		m = updated.(Model)
@@ -192,9 +223,12 @@ func TestModel_View_Ready(t *testing.T) {
 	if !containsString(view, "Infra") {
 		t.Error("expected view to contain 'Infra'")
 	}
-	// Should contain help text.
-	if !containsString(view, "q: quit") {
-		t.Error("expected view to contain help text 'q: quit'")
+	if !containsString(view, "System") {
+		t.Error("expected view to contain 'System'")
+	}
+	// Should contain help keybinding hints (from bubbles/help).
+	if !containsString(view, "quit") {
+		t.Error("expected view to contain help text with 'quit'")
 	}
 }
 
@@ -233,24 +267,113 @@ func TestModel_SetData(t *testing.T) {
 	if m.infra != infra {
 		t.Error("SetInfraData did not set infra field")
 	}
+
+	ff := &collectors.FastfetchData{
+		OS: collectors.FastfetchModule{Type: "OS", Result: "Rocky Linux"},
+	}
+	m.SetFastfetchData(ff)
+	if m.fastfetch != ff {
+		t.Error("SetFastfetchData did not set fastfetch field")
+	}
 }
 
 func TestModel_TabWrapping(t *testing.T) {
 	// Test next from last tab wraps to first.
 	m := NewModel()
-	m.activeTab = TabInfra
+	m.activeTab = TabSystem
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(Model)
 	if m.activeTab != TabClaude {
-		t.Errorf("expected next from TabInfra to wrap to TabClaude, got %d", m.activeTab)
+		t.Errorf("expected next from TabSystem to wrap to TabClaude, got %d", m.activeTab)
 	}
 
 	// Test prev from first tab wraps to last.
 	m.activeTab = TabClaude
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = updated.(Model)
-	if m.activeTab != TabInfra {
-		t.Errorf("expected prev from TabClaude to wrap to TabInfra, got %d", m.activeTab)
+	if m.activeTab != TabSystem {
+		t.Errorf("expected prev from TabClaude to wrap to TabSystem, got %d", m.activeTab)
+	}
+}
+
+func TestModel_HelpToggle(t *testing.T) {
+	m := NewModel()
+	if m.showHelp {
+		t.Error("expected showHelp to be false initially")
+	}
+
+	// Press '?' to toggle help on.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = updated.(Model)
+	if !m.showHelp {
+		t.Error("expected showHelp to be true after pressing '?'")
+	}
+
+	// Press '?' again to toggle help off.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = updated.(Model)
+	if m.showHelp {
+		t.Error("expected showHelp to be false after pressing '?' again")
+	}
+}
+
+func TestModel_SystemTabRenders(t *testing.T) {
+	m := NewModel()
+	m.activeTab = TabSystem
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	// Without data, should show "No system data"
+	view := m.View()
+	if !containsString(view, "No system data") {
+		t.Error("expected System tab to show 'No system data' when nil")
+	}
+
+	// With data, should show system info
+	m.SetFastfetchData(&collectors.FastfetchData{
+		OS:     collectors.FastfetchModule{Type: "OS", Result: "Rocky Linux 10"},
+		CPU:    collectors.FastfetchModule{Type: "CPU", Result: "Intel i7"},
+		Memory: collectors.FastfetchModule{Type: "Memory", Result: "8 GiB / 16 GiB"},
+	})
+	m.refreshViewport()
+	view = m.View()
+	if !containsString(view, "Rocky Linux") {
+		t.Error("expected System tab to show OS info")
+	}
+	if !containsString(view, "Intel i7") {
+		t.Error("expected System tab to show CPU info")
+	}
+}
+
+func TestModel_DataRefreshMsg(t *testing.T) {
+	m := NewModel()
+	// Initialize viewport
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(Model)
+
+	claude := &collectors.ClaudeUsage{
+		Accounts: []collectors.ClaudeAccountUsage{
+			{Name: "test", Status: "ok"},
+		},
+	}
+	ff := &collectors.FastfetchData{
+		OS: collectors.FastfetchModule{Type: "OS", Result: "Linux"},
+	}
+
+	updated, _ = m.Update(dataRefreshMsg{
+		claude:    claude,
+		fastfetch: ff,
+	})
+	m = updated.(Model)
+
+	if m.claude != claude {
+		t.Error("dataRefreshMsg did not update claude data")
+	}
+	if m.fastfetch != ff {
+		t.Error("dataRefreshMsg did not update fastfetch data")
+	}
+	if m.lastUpdated.IsZero() {
+		t.Error("dataRefreshMsg did not update lastUpdated")
 	}
 }
 

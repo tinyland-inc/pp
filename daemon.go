@@ -16,6 +16,7 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/billing"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/claude"
+	"gitlab.com/tinyland/lab/prompt-pulse/collectors/fastfetch"
 	"gitlab.com/tinyland/lab/prompt-pulse/collectors/infra"
 	"gitlab.com/tinyland/lab/prompt-pulse/config"
 	"gitlab.com/tinyland/lab/prompt-pulse/status"
@@ -88,6 +89,10 @@ func newDaemon(cfg *config.Config, logger *slog.Logger) (*daemon, error) {
 	infraCfg := configToInfraConfig(cfg)
 	infraCollector := infra.NewInfraCollector(infraCfg, logger)
 	registry.Register(infraCollector)
+
+	// Register fastfetch collector for system information.
+	ffCollector := fastfetch.NewFastfetchCollector(fastfetch.DefaultConfig(), logger)
+	registry.Register(ffCollector)
 
 	pidFile := filepath.Join(cfg.Daemon.CacheDir, "prompt-pulse.pid")
 
@@ -312,6 +317,15 @@ func (d *daemon) runOnce(ctx context.Context) error {
 	d.logger.Info("collection pass complete",
 		"duration", fmt.Sprintf("%dms", elapsed.Milliseconds()),
 	)
+
+	// Write health file after successful collection pass.
+	collectorNames := make([]string, len(allCollectors))
+	for i, c := range allCollectors {
+		collectorNames[i] = c.Name()
+	}
+	if err := writeHealthFile(d.config.Daemon.CacheDir, collectorNames); err != nil {
+		d.logger.Warn("failed to write health file", "error", err)
+	}
 
 	return nil
 }

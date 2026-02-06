@@ -15,6 +15,11 @@
 //	-tui              Launch interactive Bubbletea TUI
 //	-starship string  Output one-line Starship format (claude|billing|infra)
 //	-shell string     Output shell integration script (bash|zsh|fish|nushell)
+//	-health           Check daemon health status (exit 0=healthy, 1=stale/missing)
+//	-json             Output health check as JSON (with -health)
+//	-keys             Show all keybindings
+//	-mode string      Filter keybindings by mode (tui|shell|starship) (with -keys)
+//	-format string    Output format for --keys (table|json)
 //	-config string    Path to configuration file (default: ~/.config/prompt-pulse/config.yaml)
 //	-use-mocks        Use mock data instead of real API calls (for testing)
 //	-mock-accounts int Number of mock Claude accounts to generate (default: 3)
@@ -72,6 +77,11 @@ func main() {
 		shellIntegration = flag.String("shell", "", "Output shell integration script (bash|zsh|fish|nushell)")
 		runDiagnose      = flag.Bool("diagnose", false, "Diagnose Claude credentials and API connectivity")
 		runBillingCheck  = flag.Bool("billing-check", false, "Check billing provider API key configuration")
+		runHealth        = flag.Bool("health", false, "Check daemon health status")
+		healthJSON       = flag.Bool("json", false, "Output health check as JSON (with -health)")
+		showKeys         = flag.Bool("keys", false, "Show all keybindings")
+		keysMode         = flag.String("mode", "", "Filter keybindings by mode (tui|shell|starship)")
+		keysFormat       = flag.String("format", "table", "Output format for --keys (table|json)")
 		useMocks         = flag.Bool("use-mocks", false, "Use mock data instead of real API calls (for testing)")
 		mockAccounts     = flag.Int("mock-accounts", 3, "Number of mock Claude accounts to generate (with -use-mocks)")
 		mockSeed         = flag.Int64("mock-seed", 0, "Random seed for mock data (0 = random)")
@@ -93,6 +103,12 @@ func main() {
 
 	if *runBillingCheck {
 		runBillingProviderCheck()
+		os.Exit(0)
+	}
+
+	// Handle --keys flag (doesn't require config).
+	if *showKeys {
+		runKeysCommand(*keysMode, *keysFormat)
 		os.Exit(0)
 	}
 
@@ -133,6 +149,12 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Handle --health flag (requires config for cache dir).
+	if *runHealth {
+		interval := parseDuration(cfg.Daemon.PollInterval)
+		os.Exit(checkHealth(cfg.Daemon.CacheDir, interval, *healthJSON))
 	}
 
 	// Setup log file directory
@@ -176,10 +198,16 @@ func main() {
 	// Determine operation mode
 	switch {
 	case *runTUI:
-		model := tui.NewModel()
+		ttl := parseDuration(cfg.Daemon.PollInterval)
+		model := tui.NewModelWithConfig(tui.ModelConfig{
+			CacheDir:        cfg.Daemon.CacheDir,
+			CacheTTL:        ttl,
+			RefreshInterval: 30 * time.Second,
+		})
 
 		if *useMocks {
-			// Use mock data for testing
+			// Use mock data for testing (disable cache refresh).
+			model = tui.NewModel()
 			if *mockSeed != 0 {
 				mocks.SeedRandom(*mockSeed)
 			}
@@ -187,11 +215,11 @@ func main() {
 			model.SetClaudeData(mocks.MockClaudeUsage(*mockAccounts))
 			model.SetBillingData(mocks.MockBillingData())
 			model.SetInfraData(mocks.MockInfraStatus())
+			model.SetFastfetchData(mocks.MockFastfetchData())
 		} else {
 			// Load cached data to populate the model before launch.
 			store, storeErr := cache.NewStore(cfg.Daemon.CacheDir, logger)
 			if storeErr == nil {
-				ttl := parseDuration(cfg.Daemon.PollInterval)
 				if claude, _, _ := cache.GetTyped[collectors.ClaudeUsage](store, "claude", ttl); claude != nil {
 					model.SetClaudeData(claude)
 				}
@@ -201,12 +229,15 @@ func main() {
 				if infra, _, _ := cache.GetTyped[collectors.InfraStatus](store, "infra", ttl); infra != nil {
 					model.SetInfraData(infra)
 				}
+				if ff, _, _ := cache.GetTyped[collectors.FastfetchData](store, "fastfetch", ttl); ff != nil {
+					model.SetFastfetchData(ff)
+				}
 			} else {
 				logger.Warn("failed to open cache for TUI", "error", storeErr)
 			}
 		}
 
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			logger.Error("TUI error", "error", err)
 			os.Exit(1)

@@ -1,6 +1,7 @@
 package starship
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -94,6 +95,24 @@ func (o *Output) Module(module string) (string, error) {
 	default:
 		return "", fmt.Errorf("starship: unknown module %q", module)
 	}
+}
+
+// DaemonHealthy returns true if the daemon health file exists and is not stale.
+func (o *Output) DaemonHealthy() bool {
+	path := filepath.Join(o.config.CacheDir, "health.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var status struct {
+		LastPoll time.Time `json:"last_poll"`
+	}
+	if err := json.Unmarshal(data, &status); err != nil {
+		return false
+	}
+
+	return time.Since(status.LastPoll) <= 2*o.config.CacheTTL
 }
 
 // Claude reads cached ClaudeUsage data and returns a formatted string.

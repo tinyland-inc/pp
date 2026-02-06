@@ -1,8 +1,8 @@
-Claude                           │ Infrastructure                                     │ Trends
-  personal: ERR (auth_failed)    │   ts: connection failed                            │   (no data)
-  work: ERR (rate_limited)       │   k8s: bitter-darkness (unreachable)               │ 
-                                 │                                                    │ 
-Billing                          │                                                    │ 
-  digitalocean: ERR              │                                                    │ 
-  civo: ERR                      │                                                    │ 
-  Total: $0 (error)              │                                                    │ 
+Claude                                           │ Infrastructure                                     │ Trends
+  personal: ERR (auth_failed)                    │   ts: connection failed                            │   (no data)
+  work: ERR (rate_limited)                       │   k8s: bitter-darkness (unreachable)               │ 
+                                                 │                                                    │ 
+Billing                                          │                                                    │ 
+  digitalocean: ERR                              │                                                    │ 
+  civo: ERR                                      │                                                    │ 
+  Total: $0 (error)                              │                                                    │ 

@@ -59,10 +59,12 @@ type LayoutTarget struct {
 }
 
 // layoutTargets defines the thresholds for each layout mode (ordered from largest to smallest).
+// Height thresholds are set conservatively: most terminals are 35-50 rows tall,
+// so Wide/UltraWide must be reachable at common terminal heights.
 var layoutTargets = []LayoutTarget{
-	{MinWidth: 200, MinHeight: 80, Mode: LayoutUltraWide},
-	{MinWidth: 160, MinHeight: 60, Mode: LayoutWide},
-	{MinWidth: 120, MinHeight: 40, Mode: LayoutStandard},
+	{MinWidth: 200, MinHeight: 50, Mode: LayoutUltraWide},
+	{MinWidth: 160, MinHeight: 35, Mode: LayoutWide},
+	{MinWidth: 120, MinHeight: 24, Mode: LayoutStandard},
 	{MinWidth: 80, MinHeight: 24, Mode: LayoutCompact},
 }
 
@@ -200,8 +202,8 @@ func NewResponsiveConfig(width, height int) ResponsiveConfig {
 func columnsForMode(mode LayoutMode, termWidth int) ColumnConfig {
 	switch mode {
 	case LayoutUltraWide:
-		// 4-column: image(32) | main(50) | info(50) | sparklines(remaining)
-		imageCols := 32 // Matches GetWaifuSize() return value for UltraWide (32x16)
+		// 4-column: image(48) | main(50) | info(50) | sparklines(remaining)
+		imageCols := 48 // Matches GetWaifuSize() return value for UltraWide (48x24)
 		mainCols := 50
 		infoCols := 50
 		separators := 9 // 3 separators * 3 chars each (" | ")
@@ -219,33 +221,37 @@ func columnsForMode(mode LayoutMode, termWidth int) ColumnConfig {
 		}
 
 	case LayoutWide:
-		// 3-column: image(24) | main(60) | info(remaining)
-		imageCols := 24
-		mainCols := 60
-		separators := 6 // 2 separators * 3 chars each
-		remaining := termWidth - imageCols - mainCols - separators
+		// 3-column: image(36) | main(50) | info(remaining) + sparklines
+		imageCols := 36 // Matches GetWaifuSize() return value for Wide (36x18)
+		mainCols := 50
+		separators := 9 // 3 separators * 3 chars each (now 4-col with sparklines)
+		sparklineCols := 24
+		remaining := termWidth - imageCols - mainCols - sparklineCols - separators
 		infoCols := remaining
 		if infoCols < 40 {
 			infoCols = 40
 		}
 		return ColumnConfig{
-			ImageCols:   imageCols,
-			MainCols:    mainCols,
-			InfoCols:    infoCols,
-			MetricsCols: infoCols,
+			ImageCols:     imageCols,
+			MainCols:      mainCols,
+			InfoCols:      infoCols,
+			MetricsCols:   infoCols,
+			SparklineCols: sparklineCols,
 		}
 
 	case LayoutStandard:
-		// 2-column: image(22) | main(remaining)
-		imageCols := 22
-		separators := 3 // 1 separator
-		mainCols := termWidth - imageCols - separators
+		// 3-column: image(28) | main(remaining) | sparklines(20)
+		imageCols := 28 // Matches GetWaifuSize() return value for Standard (28x14)
+		sparklineCols := 20
+		separators := 6 // 2 separators * 3 chars each (" | ")
+		mainCols := termWidth - imageCols - sparklineCols - separators
 		if mainCols < 40 {
 			mainCols = 40
 		}
 		return ColumnConfig{
-			ImageCols: imageCols,
-			MainCols:  mainCols,
+			ImageCols:     imageCols,
+			MainCols:      mainCols,
+			SparklineCols: sparklineCols,
 		}
 
 	default: // LayoutCompact
@@ -272,7 +278,7 @@ func featuresForMode(mode LayoutMode) LayoutFeatures {
 	case LayoutWide:
 		return LayoutFeatures{
 			ShowImage:       true,
-			ShowSparklines:  false,
+			ShowSparklines:  true,
 			ShowFullMetrics: true,
 			ShowNodeMetrics: true,
 			VerticalStack:   false,
@@ -282,9 +288,9 @@ func featuresForMode(mode LayoutMode) LayoutFeatures {
 	case LayoutStandard:
 		return LayoutFeatures{
 			ShowImage:       true,
-			ShowSparklines:  false,
-			ShowFullMetrics: false,
-			ShowNodeMetrics: false,
+			ShowSparklines:  true,
+			ShowFullMetrics: true,
+			ShowNodeMetrics: true,
 			VerticalStack:   false,
 			ShowBorders:     true,
 		}
@@ -341,9 +347,9 @@ func (l *ResponsiveLayout) Render(imageContent string, sections []Section, billi
 	case LayoutUltraWide:
 		return l.renderUltraWide(imageContent, sections, billing)
 	case LayoutWide:
-		return l.renderWide(imageContent, sections)
+		return l.renderWide(imageContent, sections, billing)
 	case LayoutStandard:
-		return l.renderStandard(imageContent, sections)
+		return l.renderStandard(imageContent, sections, billing)
 	default:
 		return l.renderCompact(sections)
 	}
@@ -383,10 +389,22 @@ func (l *ResponsiveLayout) renderCompact(sections []Section) RenderResult {
 	}
 }
 
-// renderStandard renders content in standard (2-column) mode.
-func (l *ResponsiveLayout) renderStandard(imageContent string, sections []Section) RenderResult {
+// renderStandard renders content in standard (2 or 3-column) mode.
+// When sparklines are enabled, uses 3-column: image | info | sparklines.
+func (l *ResponsiveLayout) renderStandard(imageContent string, sections []Section, billing *collectors.BillingData) RenderResult {
 	// Build info panel.
 	infoPanelLines := l.buildInfoPanel(sections)
+
+	// If sparklines are enabled, use 3-column layout.
+	if l.config.Features.ShowSparklines {
+		sparklineLines := l.buildActualSparklines(billing)
+
+		if imageContent == "" || !l.config.Features.ShowImage {
+			return l.composeThreeColumns(strings.Join(infoPanelLines, "\n"), sparklineLines, nil)
+		}
+		// 3-column: image | info | sparklines.
+		return l.composeThreeColumns(imageContent, infoPanelLines, sparklineLines)
+	}
 
 	// If no image, render info only.
 	if imageContent == "" || !l.config.Features.ShowImage {
@@ -397,8 +415,9 @@ func (l *ResponsiveLayout) renderStandard(imageContent string, sections []Sectio
 	return l.composeSideBySide(imageContent, infoPanelLines)
 }
 
-// renderWide renders content in wide (3-column) mode.
-func (l *ResponsiveLayout) renderWide(imageContent string, sections []Section) RenderResult {
+// renderWide renders content in wide (3 or 4-column) mode.
+// When sparklines are enabled (ShowSparklines feature), uses 4-column layout.
+func (l *ResponsiveLayout) renderWide(imageContent string, sections []Section, billing *collectors.BillingData) RenderResult {
 	// For wide mode, we split sections between main and info columns.
 	mainSections := sections
 	var infoSections []Section
@@ -412,6 +431,17 @@ func (l *ResponsiveLayout) renderWide(imageContent string, sections []Section) R
 	// Build panels.
 	mainLines := l.buildInfoPanel(mainSections)
 	infoLines := l.buildInfoPanel(infoSections)
+
+	// Generate sparklines if enabled.
+	if l.config.Features.ShowSparklines {
+		sparklineLines := l.buildActualSparklines(billing)
+
+		if imageContent == "" || !l.config.Features.ShowImage {
+			return l.composeThreeColumns(strings.Join(mainLines, "\n"), infoLines, sparklineLines)
+		}
+		// 4-column: image | main | info | sparklines.
+		return l.composeFourColumns(imageContent, mainLines, infoLines, sparklineLines)
+	}
 
 	// If no image, show main + info side by side.
 	if imageContent == "" || !l.config.Features.ShowImage {

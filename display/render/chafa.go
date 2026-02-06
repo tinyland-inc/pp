@@ -32,9 +32,9 @@ func DefaultChafaConfig() ChafaConfig {
 		Cols:    40,
 		Rows:    20,
 		Format:  "auto",
-		Colors:  "256",
-		Symbols: "block",
-		Dither:  false,
+		Colors:  "truecolor",
+		Symbols: "all",
+		Dither:  true,
 		WorkDir: "",
 	}
 }

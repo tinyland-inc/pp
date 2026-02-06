@@ -39,20 +39,20 @@ func TestDetectLayoutMode(t *testing.T) {
 		height int
 		want   LayoutMode
 	}{
-		// Ultra-wide threshold tests.
-		{"ultra-wide exact", 200, 80, LayoutUltraWide},
+		// Ultra-wide threshold tests (MinWidth: 200, MinHeight: 50).
+		{"ultra-wide exact", 200, 50, LayoutUltraWide},
 		{"ultra-wide larger", 250, 100, LayoutUltraWide},
-		{"ultra-wide height too small", 200, 60, LayoutWide},
+		{"ultra-wide height too small", 200, 49, LayoutWide},
 
-		// Wide threshold tests.
-		{"wide exact", 160, 60, LayoutWide},
-		{"wide larger width", 199, 79, LayoutWide},
-		{"wide height too small", 160, 40, LayoutStandard},
+		// Wide threshold tests (MinWidth: 160, MinHeight: 35).
+		{"wide exact", 160, 35, LayoutWide},
+		{"wide larger width", 199, 49, LayoutWide},
+		{"wide height too small", 160, 34, LayoutStandard},
 
-		// Standard threshold tests.
-		{"standard exact", 120, 40, LayoutStandard},
-		{"standard larger width", 159, 59, LayoutStandard},
-		{"standard height too small", 120, 24, LayoutCompact},
+		// Standard threshold tests (MinWidth: 120, MinHeight: 24).
+		{"standard exact", 120, 24, LayoutStandard},
+		{"standard larger width", 159, 34, LayoutStandard},
+		{"standard height too small", 120, 23, LayoutCompact},
 
 		// Compact threshold tests.
 		{"compact exact", 80, 24, LayoutCompact},
@@ -98,25 +98,25 @@ func TestNewResponsiveConfig(t *testing.T) {
 		{
 			name:       "standard mode",
 			width:      120,
-			height:     40,
+			height:     24,
 			wantMode:   LayoutStandard,
 			wantImage:  true,
-			wantSpark:  false,
+			wantSpark:  true,
 			wantVStack: false,
 		},
 		{
 			name:       "wide mode",
 			width:      160,
-			height:     60,
+			height:     35,
 			wantMode:   LayoutWide,
 			wantImage:  true,
-			wantSpark:  false,
+			wantSpark:  true,
 			wantVStack: false,
 		},
 		{
 			name:       "ultra-wide mode",
 			width:      200,
-			height:     80,
+			height:     50,
 			wantMode:   LayoutUltraWide,
 			wantImage:  true,
 			wantSpark:  true,
@@ -170,21 +170,21 @@ func TestColumnsForMode(t *testing.T) {
 			name:          "standard with image",
 			mode:          LayoutStandard,
 			termWidth:     120,
-			wantImageCols: 22,
-			wantMainCols:  95, // 120 - 22 - 3
+			wantImageCols: 28, // Matches GetWaifuSize() for Standard (28x14)
+			wantMainCols:  66, // 120 - 28 - 20 - 6
 		},
 		{
 			name:          "wide 3-column",
 			mode:          LayoutWide,
 			termWidth:     160,
-			wantImageCols: 24,
-			wantMainCols:  60,
+			wantImageCols: 36, // Matches GetWaifuSize() for Wide (36x18)
+			wantMainCols:  50,
 		},
 		{
 			name:          "ultra-wide 4-column",
 			mode:          LayoutUltraWide,
 			termWidth:     200,
-			wantImageCols: 32, // Matches GetWaifuSize() for UltraWide (32x16)
+			wantImageCols: 48, // Matches GetWaifuSize() for UltraWide (48x24)
 			wantMainCols:  50,
 		},
 	}
@@ -215,8 +215,8 @@ func TestFeaturesForMode(t *testing.T) {
 		wantBorders  bool
 	}{
 		{LayoutCompact, false, false, false, false, true, false},
-		{LayoutStandard, true, false, false, false, false, true},
-		{LayoutWide, true, false, true, true, false, true},
+		{LayoutStandard, true, true, true, true, false, true},
+		{LayoutWide, true, true, true, true, false, true},
 		{LayoutUltraWide, true, true, true, true, false, true},
 	}
 
@@ -281,7 +281,7 @@ func TestRenderCompact(t *testing.T) {
 
 // TestRenderStandard verifies standard mode rendering with image.
 func TestRenderStandard(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -314,7 +314,7 @@ func TestRenderStandard(t *testing.T) {
 
 // TestRenderStandardNoImage verifies standard mode without image.
 func TestRenderStandardNoImage(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -329,15 +329,17 @@ func TestRenderStandardNoImage(t *testing.T) {
 		t.Error("standard output missing Claude section")
 	}
 
-	// Should have box borders.
-	if !strings.Contains(result.Output, string(boxTopLeft)) {
-		t.Error("standard output missing box borders")
+	// Standard mode now uses 3-column layout with sparklines,
+	// so without an image, info is shown in multi-column format.
+	// Should contain sparkline Trends section (with no data).
+	if !strings.Contains(result.Output, "Trends") {
+		t.Error("standard output should contain Trends sparkline section")
 	}
 }
 
 // TestRenderWide verifies wide mode 3-column rendering.
 func TestRenderWide(t *testing.T) {
-	cfg := NewResponsiveConfig(160, 60)
+	cfg := NewResponsiveConfig(160, 35)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -366,7 +368,7 @@ func TestRenderWide(t *testing.T) {
 
 // TestRenderUltraWide verifies ultra-wide mode 4-column rendering.
 func TestRenderUltraWide(t *testing.T) {
-	cfg := NewResponsiveConfig(200, 80)
+	cfg := NewResponsiveConfig(200, 50)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -592,7 +594,7 @@ func TestPadToWidth(t *testing.T) {
 
 // TestComposeSideBySideAlignment verifies column alignment.
 func TestComposeSideBySideAlignment(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	cfg.Columns.ImageCols = 10
 	layout := NewResponsiveLayout(cfg)
@@ -615,7 +617,7 @@ func TestComposeSideBySideAlignment(t *testing.T) {
 
 // TestComposeSideBySideImageTaller verifies handling when image is taller.
 func TestComposeSideBySideImageTaller(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -635,7 +637,7 @@ func TestComposeSideBySideImageTaller(t *testing.T) {
 
 // TestComposeSideBySideInfoTaller verifies handling when info is taller.
 func TestComposeSideBySideInfoTaller(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -707,7 +709,7 @@ func TestColorEnabled(t *testing.T) {
 // Note: Actual ANSI output depends on terminal detection by lipgloss/termenv,
 // so in test environments without a TTY, colors may not be emitted.
 func TestColorEnabledWithColors(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = true
 	layout := NewResponsiveLayout(cfg)
 
@@ -735,7 +737,7 @@ func TestColorEnabledWithColors(t *testing.T) {
 
 // TestConfigRetrieval verifies config can be retrieved from layout.
 func TestConfigRetrieval(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -793,7 +795,7 @@ func TestOutputFitsWithin24Rows(t *testing.T) {
 
 // TestBuildInfoPanel verifies info panel construction.
 func TestBuildInfoPanel(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -871,7 +873,7 @@ func TestLayoutConfigDefaults(t *testing.T) {
 
 // TestColumnSeparator verifies column separator rendering.
 func TestColumnSeparator(t *testing.T) {
-	cfg := NewResponsiveConfig(120, 40)
+	cfg := NewResponsiveConfig(120, 24)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 
@@ -924,7 +926,7 @@ func TestSectionTitleWithColor(t *testing.T) {
 
 // TestUltraWideMode_WithBillingData verifies sparklines render with real data.
 func TestUltraWideMode_WithBillingData(t *testing.T) {
-	cfg := NewResponsiveConfig(200, 80)
+	cfg := NewResponsiveConfig(200, 50)
 	cfg.ColorEnabled = false
 	layout := NewResponsiveLayout(cfg)
 

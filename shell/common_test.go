@@ -62,6 +62,18 @@ func TestGenerateIntegration_Zsh(t *testing.T) {
 	if !strings.Contains(output, "compdef") {
 		t.Error("Zsh dispatch should contain compdef completion")
 	}
+	if !strings.Contains(output, "pp-health()") {
+		t.Error("Zsh dispatch should contain pp-health function")
+	}
+	if !strings.Contains(output, "pp-keys()") {
+		t.Error("Zsh dispatch should contain pp-keys function")
+	}
+	if !strings.Contains(output, "--health:Check daemon health") {
+		t.Error("Zsh completions should include --health")
+	}
+	if !strings.Contains(output, "--keys:Show all keybindings") {
+		t.Error("Zsh completions should include --keys")
+	}
 }
 
 func TestGenerateIntegration_Fish(t *testing.T) {
@@ -74,6 +86,21 @@ func TestGenerateIntegration_Fish(t *testing.T) {
 	if !strings.Contains(output, "function pp-status") {
 		t.Error("Fish dispatch should contain pp-status function")
 	}
+	if !strings.Contains(output, "function pp-health") {
+		t.Error("Fish dispatch should contain pp-health function")
+	}
+	if !strings.Contains(output, "function pp-keys") {
+		t.Error("Fish dispatch should contain pp-keys function")
+	}
+	if !strings.Contains(output, "-l health") {
+		t.Error("Fish completions should include --health")
+	}
+	if !strings.Contains(output, "-l keys") {
+		t.Error("Fish completions should include --keys")
+	}
+	if !strings.Contains(output, "-l mode") {
+		t.Error("Fish completions should include --mode")
+	}
 }
 
 func TestGenerateIntegration_Nushell(t *testing.T) {
@@ -85,6 +112,15 @@ func TestGenerateIntegration_Nushell(t *testing.T) {
 	}
 	if !strings.Contains(output, `extern "prompt-pulse"`) {
 		t.Error("Nushell dispatch should contain extern completion definition")
+	}
+	if !strings.Contains(output, "def pp-health") {
+		t.Error("Nushell dispatch should contain pp-health command")
+	}
+	if !strings.Contains(output, "def pp-keys") {
+		t.Error("Nushell dispatch should contain pp-keys command")
+	}
+	if !strings.Contains(output, "--health") {
+		t.Error("Nushell completions should include --health")
 	}
 }
 

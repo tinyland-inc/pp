@@ -496,9 +496,9 @@ func (b *Banner) GenerateResponsive(ctx context.Context) (string, error) {
 	// Step 7: Build sections from data (no fastfetch in this code path).
 	sections := b.buildSections(claude, billing, infra, nil, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
 
-	// Step 8: Render using responsive layout (no billing data in this code path).
+	// Step 8: Render using responsive layout.
 	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
-	result := responsiveLayout.Render(imageContent, sections, nil)
+	result := responsiveLayout.Render(imageContent, sections, billing)
 
 	return result.Output, nil
 }
@@ -534,7 +534,7 @@ func (b *Banner) buildSections(
 	})
 
 	// Billing section.
-	billingContent := b.formatBillingForSection(billing)
+	billingContent := b.formatBillingForSection(billing, features.ShowFullMetrics)
 	sections = append(sections, layout.Section{
 		Title:   "Billing",
 		Content: billingContent,
@@ -560,53 +560,29 @@ func (b *Banner) buildSections(
 }
 
 // formatClaudeForSection formats Claude usage data for a layout section.
+// Uses the ClaudePanel widget for richer display when showFull is true.
 func (b *Banner) formatClaudeForSection(data *collectors.ClaudeUsage, showFull bool) []string {
 	if data == nil || len(data.Accounts) == 0 {
 		return []string{"(no data)"}
 	}
 
-	var lines []string
-	for _, acct := range data.Accounts {
-		if acct.Status != "ok" {
-			lines = append(lines, acct.Name+": ERR")
-			continue
-		}
-
-		switch acct.Type {
-		case "subscription":
-			var parts []string
-			if acct.FiveHour != nil {
-				part := intToStr(int(acct.FiveHour.Utilization)) + "% (5h)"
-				parts = append(parts, part)
-			}
-			if acct.SevenDay != nil && showFull {
-				part := intToStr(int(acct.SevenDay.Utilization)) + "% (7d)"
-				parts = append(parts, part)
-			}
-			if len(parts) > 0 {
-				lines = append(lines, acct.Name+": "+join(parts, " | "))
-			} else {
-				lines = append(lines, acct.Name+": 0% (5h)")
-			}
-		case "api":
-			if acct.RateLimits != nil {
-				used := acct.RateLimits.RequestsLimit - acct.RateLimits.RequestsRemaining
-				lines = append(lines, acct.Name+": "+intToStr(int(used))+"/"+intToStr(int(acct.RateLimits.RequestsLimit))+" req")
-			} else {
-				lines = append(lines, acct.Name+": 0/0 req")
-			}
-		default:
-			lines = append(lines, acct.Name+": ERR")
-		}
+	panel := widgets.NewClaudePanel(data, 60)
+	if showFull {
+		return splitLines(panel.Render())
 	}
-
-	return lines
+	return []string{panel.RenderCompact()}
 }
 
 // formatBillingForSection formats billing data for a layout section.
-func (b *Banner) formatBillingForSection(data *collectors.BillingData) []string {
+// When showFull is true, per-provider detail lines are appended.
+func (b *Banner) formatBillingForSection(data *collectors.BillingData, showFull bool) []string {
 	if data == nil {
 		return []string{"(no data)"}
+	}
+
+	// If all providers errored and spend is zero, show N/A instead of misleading $0
+	if data.Total.SuccessCount == 0 && data.Total.ErrorCount > 0 {
+		return []string{"N/A (" + intToStr(data.Total.ErrorCount) + " providers unreachable)"}
 	}
 
 	line := "$" + intToStr(int(data.Total.CurrentMonthUSD)) + " this month"
@@ -619,49 +595,53 @@ func (b *Banner) formatBillingForSection(data *collectors.BillingData) []string 
 		line += " OVER BUDGET"
 	}
 
-	return []string{line}
+	lines := []string{line}
+
+	// Per-provider detail when full metrics are enabled.
+	if showFull && len(data.Providers) > 0 {
+		for _, p := range data.Providers {
+			if p.Status == "ok" {
+				pLine := "  " + p.Provider + ": $" + intToStr(int(p.CurrentMonth.SpendUSD))
+				if p.CurrentMonth.ForecastUSD != nil {
+					pLine += " (~$" + intToStr(int(*p.CurrentMonth.ForecastUSD)) + " forecast)"
+				}
+				lines = append(lines, pLine)
+			} else {
+				lines = append(lines, "  "+p.Provider+": ERR")
+			}
+		}
+	}
+
+	return lines
 }
 
 // formatInfraForSection formats infrastructure data for a layout section.
+// When showNodeMetrics is true, uses the InfraPanel widget for tree-structured display.
 func (b *Banner) formatInfraForSection(data *collectors.InfraStatus, showNodeMetrics bool) []string {
 	if data == nil {
 		return []string{"(no data)"}
 	}
 
+	// Use InfraPanel widget for rich tree display when node metrics are enabled.
+	if showNodeMetrics {
+		panel := widgets.NewInfraPanel(widgets.InfraPanelConfig{
+			Width:          60,
+			ShowMiniGauges: true,
+			GaugeWidth:     6,
+			ColorEnabled:   true,
+			MaxNodes:       6,
+		})
+		rendered := panel.Render(data)
+		if rendered != "" {
+			return splitLines(rendered)
+		}
+	}
+
+	// Compact inline display for non-node-metrics modes.
 	var lines []string
 
 	if data.Tailscale != nil {
 		lines = append(lines, "ts: "+intToStr(data.Tailscale.OnlineCount)+"/"+intToStr(data.Tailscale.TotalCount)+" online")
-
-		// Show per-node metrics if enabled.
-		if showNodeMetrics {
-			for _, node := range data.Tailscale.Nodes {
-				if !node.Online {
-					continue
-				}
-				if node.CPUPercent == nil && node.RAMPercent == nil && node.DiskPercent == nil {
-					continue
-				}
-
-				var metrics []string
-				if node.CPUPercent != nil {
-					gauge := widgets.RenderMiniGauge(*node.CPUPercent, 6)
-					metrics = append(metrics, "CPU "+gauge+" "+intToStr(int(*node.CPUPercent))+"%")
-				}
-				if node.RAMPercent != nil {
-					gauge := widgets.RenderMiniGauge(*node.RAMPercent, 6)
-					metrics = append(metrics, "RAM "+gauge+" "+intToStr(int(*node.RAMPercent))+"%")
-				}
-				if node.DiskPercent != nil {
-					gauge := widgets.RenderMiniGauge(*node.DiskPercent, 6)
-					metrics = append(metrics, "Disk "+gauge+" "+intToStr(int(*node.DiskPercent))+"%")
-				}
-
-				if len(metrics) > 0 {
-					lines = append(lines, "  "+node.Hostname+": "+join(metrics, " | "))
-				}
-			}
-		}
 	}
 
 	for _, cluster := range data.Kubernetes {
@@ -681,6 +661,25 @@ func (b *Banner) formatFastfetchForSection(data *collectors.FastfetchData) []str
 		return []string{"(no data)"}
 	}
 	return data.FormatCompact()
+}
+
+// splitLines splits a string by newline characters without importing strings.
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }
 
 // join concatenates strings with a separator.

@@ -21,7 +21,7 @@ func TestGenerateBashIntegration_ContainsFunctions(t *testing.T) {
 	cfg := DefaultIntegrationConfig()
 	output := GenerateBashIntegration(cfg)
 
-	functions := []string{"pp-status", "pp-tui", "pp-daemon-start", "pp-daemon-stop", "pp-banner"}
+	functions := []string{"pp-status", "pp-tui", "pp-daemon-start", "pp-daemon-stop", "pp-banner", "pp-health", "pp-keys", "pp-refresh"}
 	for _, fn := range functions {
 		if !strings.Contains(output, fn+"()") {
 			t.Errorf("output should contain function %s()", fn)

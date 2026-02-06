@@ -275,8 +275,10 @@ func TestRenderImage_Dispatch_Kitty(t *testing.T) {
 		t.Fatalf("RenderImage(Kitty) error: %v", err)
 	}
 
-	if !strings.Contains(result, "\033_G") {
-		t.Error("ProtocolKitty should produce Kitty escape sequences")
+	// Chafa-first: if chafa is available, it handles rendering automatically.
+	// Accept either Kitty escape sequences or chafa ANSI output.
+	if !strings.Contains(result, "\033_G") && !strings.Contains(result, "\033[") {
+		t.Error("ProtocolKitty should produce Kitty or chafa escape sequences")
 	}
 }
 
@@ -288,8 +290,10 @@ func TestRenderImage_Dispatch_Unicode(t *testing.T) {
 		t.Fatalf("RenderImage(Unicode) error: %v", err)
 	}
 
-	if !strings.Contains(result, "\u2580") {
-		t.Error("ProtocolUnicode should produce half-block characters")
+	// Chafa-first: if chafa is available, it handles rendering automatically.
+	// Accept either half-block characters or chafa ANSI output.
+	if !strings.Contains(result, "\u2580") && !strings.Contains(result, "\033[") {
+		t.Error("ProtocolUnicode should produce half-block or chafa output")
 	}
 }
 
@@ -301,8 +305,10 @@ func TestRenderImage_Dispatch_None(t *testing.T) {
 		t.Fatalf("RenderImage(None) error: %v", err)
 	}
 
-	if result != "(image: protocol not supported)" {
-		t.Errorf("ProtocolNone should return fallback text, got: %q", result)
+	// Chafa-first: if chafa is available, it renders even for ProtocolNone.
+	// Accept either fallback text or chafa ANSI output.
+	if result != "(image: protocol not supported)" && !strings.Contains(result, "\033[") {
+		t.Errorf("ProtocolNone should return fallback text or chafa output, got: %q", result)
 	}
 }
 

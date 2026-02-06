@@ -17,31 +17,46 @@ func GenerateNushellIntegration(cfg IntegrationConfig) string {
 #     mode: [emacs vi_normal vi_insert]
 #     event: {
 #         send: executehostcommand
-#         cmd: "%s --tui"
+#         cmd: "%[1]s --tui"
 #     }
 # }
 
 # Show prompt-pulse status
 def pp-status [] {
-    %s --starship claude
-    %s --starship billing
-    %s --starship infra
+    %[1]s --starship claude
+    %[1]s --starship billing
+    %[1]s --starship infra
 }
 
 # Launch prompt-pulse TUI
 def pp-tui [] {
-    %s --tui
+    %[1]s --tui
 }
 
 # Start prompt-pulse daemon
 def pp-daemon-start [] {
-    %s --daemon &
+    %[1]s --daemon &
     print "prompt-pulse daemon started"
 }
 
 # Stop prompt-pulse daemon
 def pp-daemon-stop [] {
-    ps | where name =~ "%s" | each { |it| kill $it.pid }
+    ps | where name =~ "%[1]s" | each { |it| kill $it.pid }
+}
+
+# Check daemon health
+def pp-health [] {
+    %[1]s --health
+}
+
+# Show all keybindings
+def pp-keys [...args] {
+    %[1]s --keys ...$args
+}
+
+# Force immediate data refresh
+def pp-refresh [] {
+    %[1]s
 }
 
 # Completions
@@ -49,22 +64,26 @@ def "nu-complete prompt-pulse starship" [] {
     ["claude" "billing" "infra"]
 }
 
-extern "%s" [
+def "nu-complete prompt-pulse mode" [] {
+    ["tui" "shell" "starship"]
+}
+
+def "nu-complete prompt-pulse format" [] {
+    ["table" "json"]
+}
+
+extern "%[1]s" [
     --tui                                    # Launch interactive TUI
     --daemon                                 # Run background daemon
+    --banner                                 # Display system status banner
     --starship: string@"nu-complete prompt-pulse starship"  # Output Starship format
+    --health                                 # Check daemon health status
+    --keys                                   # Show all keybindings
+    --mode: string@"nu-complete prompt-pulse mode"  # Filter keybindings by mode
+    --format: string@"nu-complete prompt-pulse format"  # Output format for --keys
     --config: path                           # Config file path
     --version                                # Show version
     --verbose                                # Verbose logging
 ]
-`,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-		cfg.BinaryPath,
-	)
+`, cfg.BinaryPath)
 }

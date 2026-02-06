@@ -1,9 +1,9 @@
-Claude                                                       │ Infrastructure
-  personal: 45% (5h) | 12% (7d)                              │   ts: 4/5 online
-  work: 80% (5h) | 65% (7d)                                  │   k8s: bitter-darkness (healthy)
-                                                             │   k8s: staging (degraded)
-Billing                                                      │   uptime: 3d 14h
-  digitalocean: $45.50                                       │ 
-  civo: $32.00                                               │ 
-  aws: $64.50                                                │ 
-  Total: $142 this month | $180 forecast                     │ 
+Claude                               │ Infrastructure                                     │ Trends
+  personal: 45% (5h) | 12% (7d)      │   ts: 4/5 online                                   │   (no data)
+  work: 80% (5h) | 65% (7d)          │   k8s: bitter-darkness (healthy)                   │ 
+                                     │   k8s: staging (degraded)                          │ 
+Billing                              │   uptime: 3d 14h                                   │ 
+  digitalocean: $45.50               │                                                    │ 
+  civo: $32.00                       │                                                    │ 
+  aws: $64.50                        │                                                    │ 
+  Total: $142 this month | $180 forecast │                                                    │ 

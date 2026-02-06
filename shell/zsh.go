@@ -48,6 +48,21 @@ pp-banner() {
     %[1]s --banner --session-id "$PPULSE_SESSION_ID"
 }
 
+# Check daemon health
+pp-health() {
+    %[1]s --health
+}
+
+# Show all keybindings
+pp-keys() {
+    %[1]s --keys "$@"
+}
+
+# Force immediate data refresh
+pp-refresh() {
+    %[1]s
+}
+
 # Zsh completion for prompt-pulse
 _prompt_pulse_completion() {
     local -a commands
@@ -56,6 +71,8 @@ _prompt_pulse_completion() {
         '--tui:Launch interactive TUI'
         '--daemon:Run background daemon'
         '--starship:Output Starship format'
+        '--health:Check daemon health status'
+        '--keys:Show all keybindings'
         '--config:Config file path'
         '--version:Show version'
         '--verbose:Verbose logging'

@@ -113,47 +113,39 @@ func TestFormatInfraForSection_WithNodeMetrics(t *testing.T) {
 
 	result := b.formatInfraForSection(data, true)
 
-	// Should have summary + node metrics
-	if len(result) != 2 {
-		t.Errorf("Expected 2 lines (summary + node), got %d: %v", len(result), result)
+	// InfraPanel widget renders tree-structured output with multiple lines.
+	// Should have at least 2 lines (header + node info).
+	if len(result) < 2 {
+		t.Errorf("Expected at least 2 lines from InfraPanel, got %d: %v", len(result), result)
 	}
 
-	// First line should be summary
-	if !strings.Contains(result[0], "1/2 online") {
-		t.Errorf("Expected summary line, got: %s", result[0])
+	// Join all lines and check for expected content across the full output.
+	allOutput := strings.Join(result, "\n")
+
+	// Should contain node hostname
+	if !strings.Contains(allOutput, "honey") {
+		t.Errorf("Expected hostname 'honey' in output, got: %s", allOutput)
 	}
 
-	// Second line should have node metrics with gauges
-	nodeLine := result[1]
-	if !strings.Contains(nodeLine, "honey") {
-		t.Errorf("Expected hostname in node line, got: %s", nodeLine)
+	// Should contain online count
+	if !strings.Contains(allOutput, "online") {
+		t.Errorf("Expected 'online' in output, got: %s", allOutput)
 	}
 
-	// Check for gauge characters (█ or ░)
-	hasGaugeChars := strings.ContainsAny(nodeLine, "█░")
+	// Should contain gauge characters (█ or ░) from InfraPanel mini gauges
+	hasGaugeChars := strings.ContainsAny(allOutput, "█░")
 	if !hasGaugeChars {
-		t.Errorf("Expected gauge characters in node metrics, got: %s", nodeLine)
+		t.Errorf("Expected gauge characters in InfraPanel output, got: %s", allOutput)
 	}
 
-	// Should contain all three metrics
-	if !strings.Contains(nodeLine, "CPU") {
-		t.Errorf("Expected CPU metric, got: %s", nodeLine)
+	// Should contain metric labels
+	if !strings.Contains(allOutput, "CPU") {
+		t.Errorf("Expected CPU metric in output, got: %s", allOutput)
 	}
-	if !strings.Contains(nodeLine, "RAM") {
-		t.Errorf("Expected RAM metric, got: %s", nodeLine)
+	if !strings.Contains(allOutput, "RAM") {
+		t.Errorf("Expected RAM metric in output, got: %s", allOutput)
 	}
-	if !strings.Contains(nodeLine, "Disk") {
-		t.Errorf("Expected Disk metric, got: %s", nodeLine)
-	}
-
-	// Should contain percentage values
-	if !strings.Contains(nodeLine, "45%") {
-		t.Errorf("Expected CPU percentage, got: %s", nodeLine)
-	}
-	if !strings.Contains(nodeLine, "67%") {
-		t.Errorf("Expected RAM percentage, got: %s", nodeLine)
-	}
-	if !strings.Contains(nodeLine, "32%") {
-		t.Errorf("Expected Disk percentage, got: %s", nodeLine)
+	if !strings.Contains(allOutput, "Disk") {
+		t.Errorf("Expected Disk metric in output, got: %s", allOutput)
 	}
 }

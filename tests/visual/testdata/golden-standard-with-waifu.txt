@@ -1,15 +1,15 @@
-XXXXXXXXXXXXXXXXXXXXXX │ Claude
-XXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)
-XXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)
-XXXXXXXXXXXXXXXXXXXXXX │ 
-XXXXXXXXXXXXXXXXXXXXXX │ Billing
-XXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50
-XXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00
-XXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50
-XXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast
-XXXXXXXXXXXXXXXXXXXXXX │ 
-XXXXXXXXXXXXXXXXXXXXXX │ Infrastructure
-XXXXXXXXXXXXXXXXXXXXXX │   ts: 4/5 online
-XXXXXXXXXXXXXXXXXXXXXX │   k8s: bitter-darkness (healthy)
-XXXXXXXXXXXXXXXXXXXXXX │   k8s: staging (degraded)
-XXXXXXXXXXXXXXXXXXXXXX │   uptime: 3d 14h
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                                             │ Trends
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                                    │   (no data)
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                                        │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                                            │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                                             │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                                     │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                                      │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Infrastructure                                                     │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   ts: 4/5 online                                                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   k8s: bitter-darkness (healthy)                                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   k8s: staging (degraded)                                          │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXX │   uptime: 3d 14h                                                   │ 

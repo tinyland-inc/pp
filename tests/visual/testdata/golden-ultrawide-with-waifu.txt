@@ -1,15 +1,15 @@
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                                     │ Trends
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   (no data)
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                                   │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                      │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast           │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                                     │ Trends
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                                   │   (no data)
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                          │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                                   │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                      │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast           │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                                    │ 

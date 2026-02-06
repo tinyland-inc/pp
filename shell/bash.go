@@ -43,5 +43,20 @@ pp-banner() {
     export PPULSE_SESSION_ID="${PPULSE_SESSION_ID:-$$-$(date +%%s)}"
     %[1]s --banner --session-id "$PPULSE_SESSION_ID"
 }
+
+# Check daemon health
+pp-health() {
+    %[1]s --health
+}
+
+# Show all keybindings
+pp-keys() {
+    %[1]s --keys "$@"
+}
+
+# Force immediate data refresh
+pp-refresh() {
+    %[1]s
+}
 `, cfg.BinaryPath, cfg.TUIKeybinding)
 }

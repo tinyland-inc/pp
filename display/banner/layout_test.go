@@ -781,10 +781,10 @@ func TestGetWaifuSize(t *testing.T) {
 		wantCols int
 		wantRows int
 	}{
-		{"compact size", LayoutCompact, 16, 8},
-		{"standard size", LayoutStandard, 22, 11},
-		{"wide size", LayoutWide, 22, 11},
-		{"ultrawide size", LayoutUltraWide, 32, 16},
+		{"compact size", LayoutCompact, 20, 10},
+		{"standard size", LayoutStandard, 28, 14},
+		{"wide size", LayoutWide, 36, 18},
+		{"ultrawide size", LayoutUltraWide, 48, 24},
 	}
 
 	for _, tt := range tests {
@@ -805,10 +805,10 @@ func TestWaifuSizeIntegration(t *testing.T) {
 		wantCols  int
 		wantRows  int
 	}{
-		{80, 16, 8},    // Compact
-		{120, 22, 11},  // Standard
-		{160, 22, 11},  // Wide
-		{240, 32, 16},  // UltraWide
+		{80, 20, 10},    // Compact
+		{120, 28, 14},  // Standard
+		{160, 36, 18},  // Wide
+		{240, 48, 24},  // UltraWide
 	}
 
 	for _, tt := range tests {
