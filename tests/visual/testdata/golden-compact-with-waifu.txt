@@ -1,0 +1,15 @@
+Claude
+  personal: 45% (5h) | 12% (7d)
+  work: 80% (5h) | 65% (7d)
+
+Billing
+  digitalocean: $45.50
+  civo: $32.00
+  aws: $64.50
+  Total: $142 this month | $180 forecast
+
+Infrastructure
+  ts: 4/5 online
+  k8s: bitter-darkness (healthy)
+  k8s: staging (degraded)
+  uptime: 3d 14h

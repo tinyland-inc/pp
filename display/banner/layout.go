@@ -1,0 +1,729 @@
+package banner
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/widgets"
+)
+
+// Color palette matching the TUI theme (display/tui/theme.go).
+var (
+	colorPrimary   = lipgloss.Color("#7C3AED") // Purple - headers
+	colorSecondary = lipgloss.Color("#06B6D4") // Cyan - section titles
+	colorSuccess   = lipgloss.Color("#22C55E") // Green - healthy status
+	colorWarning   = lipgloss.Color("#EAB308") // Yellow - warning status
+	colorDanger    = lipgloss.Color("#EF4444") // Red - critical status
+	colorMuted     = lipgloss.Color("#6B7280") // Gray - separators
+)
+
+// LayoutConfig controls banner layout behavior.
+type LayoutConfig struct {
+	// TermWidth is the terminal width in columns (default: 80).
+	TermWidth int
+	// TermHeight is the terminal height in rows (default: 24).
+	TermHeight int
+	// ImageCols is the width of the image column (default: 22).
+	ImageCols int
+	// SysInfoCols is the width of the system info column (default: 40).
+	// Only used in 3-column layout.
+	SysInfoCols int
+	// DashboardCols is the width of the dashboard column (remaining width).
+	// Only used in 3-column layout.
+	DashboardCols int
+	// ShowImage enables the image column (when false, only shows info).
+	ShowImage bool
+	// ShowFastfetch enables the fastfetch system info center column.
+	ShowFastfetch bool
+	// Hostname to display in the header.
+	Hostname string
+	// ColorEnabled enables ANSI colors.
+	ColorEnabled bool
+}
+
+// LayoutMode represents the responsive layout breakpoint.
+type LayoutMode int
+
+const (
+	// LayoutCompact is for terminals < 120 columns (single column, small waifu above).
+	LayoutCompact LayoutMode = iota
+	// LayoutStandard is for terminals 120-159 columns (two columns, medium waifu left).
+	LayoutStandard
+	// LayoutWide is for terminals 160-199 columns (three columns, medium waifu).
+	LayoutWide
+	// LayoutUltraWide is for terminals 200+ columns (three columns, large waifu).
+	LayoutUltraWide
+)
+
+// WaifuSize holds dimensions for waifu image rendering.
+type WaifuSize struct {
+	Cols int
+	Rows int
+}
+
+// DetermineLayoutMode selects the appropriate layout mode based on terminal width.
+func DetermineLayoutMode(termWidth int) LayoutMode {
+	switch {
+	case termWidth < 120:
+		return LayoutCompact
+	case termWidth < 160:
+		return LayoutStandard
+	case termWidth < 200:
+		return LayoutWide
+	default:
+		return LayoutUltraWide
+	}
+}
+
+// GetWaifuSize returns the appropriate waifu dimensions for the layout mode.
+// Sizes are scaled to match the ImageCols in responsive.go columnsForMode().
+func GetWaifuSize(mode LayoutMode) WaifuSize {
+	switch mode {
+	case LayoutCompact:
+		return WaifuSize{Cols: 20, Rows: 10}
+	case LayoutStandard:
+		return WaifuSize{Cols: 28, Rows: 14}
+	case LayoutWide:
+		return WaifuSize{Cols: 36, Rows: 18}
+	case LayoutUltraWide:
+		return WaifuSize{Cols: 48, Rows: 24}
+	default:
+		return WaifuSize{Cols: 28, Rows: 14}
+	}
+}
+
+// DefaultLayoutConfig returns sensible defaults targeting 80x24.
+func DefaultLayoutConfig() LayoutConfig {
+	return LayoutConfig{
+		TermWidth:     80,
+		TermHeight:    24,
+		ImageCols:     22,
+		SysInfoCols:   40,
+		DashboardCols: 58,
+		ShowImage:     true,
+		ShowFastfetch: false,
+		Hostname:      "",
+		ColorEnabled:  true,
+	}
+}
+
+// ThreeColumnLayoutConfig returns configuration for the 3-column layout.
+// Layout: Waifu (22) | System Info (40) | Dashboard (58+)
+func ThreeColumnLayoutConfig(termWidth, termHeight int) LayoutConfig {
+	imageCols := 22
+	sysInfoCols := 40
+	separators := 6 // 2 separators " | "
+	dashboardCols := termWidth - imageCols - sysInfoCols - separators
+	if dashboardCols < 40 {
+		dashboardCols = 40
+	}
+
+	return LayoutConfig{
+		TermWidth:     termWidth,
+		TermHeight:    termHeight,
+		ImageCols:     imageCols,
+		SysInfoCols:   sysInfoCols,
+		DashboardCols: dashboardCols,
+		ShowImage:     true,
+		ShowFastfetch: true,
+		Hostname:      "",
+		ColorEnabled:  true,
+	}
+}
+
+// InfoData holds pre-formatted data for the info panel.
+type InfoData struct {
+	Claude    *collectors.ClaudeUsage
+	Billing   *collectors.BillingData
+	Infra     *collectors.InfraStatus
+	Fastfetch *collectors.FastfetchData
+	// StatusLevel is the evaluated system status ("healthy", "warning", "critical", "unknown").
+	StatusLevel string
+	// Uptime is the system uptime string (optional).
+	Uptime string
+}
+
+// Layout composes the banner from image content and system info.
+type Layout struct {
+	config LayoutConfig
+}
+
+// NewLayout creates a new Layout with the given configuration.
+func NewLayout(cfg LayoutConfig) *Layout {
+	return &Layout{config: cfg}
+}
+
+// Render composes the complete banner output. imageContent is the pre-rendered
+// image string (may be empty if ShowImage is false or no image available).
+// Returns the composed banner string ready for terminal output.
+func (l *Layout) Render(imageContent string, data InfoData) string {
+	// Check for 3-column layout (waifu | fastfetch | dashboard).
+	if l.config.ShowFastfetch && data.Fastfetch != nil && !data.Fastfetch.IsEmpty() {
+		return l.renderThreeColumn(imageContent, data)
+	}
+
+	infoPanel := l.renderInfoPanel(data)
+
+	showImage := l.config.ShowImage && imageContent != ""
+	if showImage {
+		return l.composeSideBySide(imageContent, infoPanel)
+	}
+	// No image: truncate info panel to TermHeight rows.
+	lines := strings.Split(infoPanel, "\n")
+	if len(lines) > l.config.TermHeight {
+		lines = lines[:l.config.TermHeight]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderThreeColumn renders the 3-column layout:
+// Waifu (22 cols) | System Info (40 cols) | Live Dashboard (58+ cols)
+func (l *Layout) renderThreeColumn(imageContent string, data InfoData) string {
+	// Build system info panel from fastfetch data.
+	sysInfoPanel := l.renderFastfetchPanel(data.Fastfetch)
+
+	// Build dashboard panel (Claude, Billing, Infra).
+	dashboardPanel := l.renderDashboardPanel(data)
+
+	// Compose all three columns.
+	return l.composeThreeColumns(imageContent, sysInfoPanel, dashboardPanel)
+}
+
+// renderFastfetchPanel builds the center column with system info from fastfetch.
+func (l *Layout) renderFastfetchPanel(data *collectors.FastfetchData) string {
+	if data == nil || data.IsEmpty() {
+		return l.styledMuted("(no system info)")
+	}
+
+	var lines []string
+	lines = append(lines, l.sectionTitle("System Info"))
+	lines = append(lines, l.separator())
+
+	// Use compact format for the center column.
+	for _, line := range data.FormatCompact() {
+		// Truncate to fit SysInfoCols.
+		if visibleLen(line) > l.config.SysInfoCols-2 {
+			line = truncateToWidth(line, l.config.SysInfoCols-2)
+		}
+		lines = append(lines, "  "+line)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderDashboardPanel builds the right column with Claude, Billing, and Infra status.
+func (l *Layout) renderDashboardPanel(data InfoData) string {
+	var lines []string
+
+	hostname := l.config.Hostname
+	if hostname == "" {
+		hostname = "localhost"
+	}
+	lines = append(lines, l.renderHeader(hostname, data.StatusLevel))
+	lines = append(lines, l.separator())
+	lines = append(lines, "")
+
+	// Claude section.
+	lines = append(lines, l.sectionTitle("Claude"))
+	lines = append(lines, l.renderClaudeSummary(data.Claude)...)
+	lines = append(lines, "")
+
+	// Billing section.
+	lines = append(lines, l.sectionTitle("Billing"))
+	lines = append(lines, l.renderBillingSummary(data.Billing)...)
+	lines = append(lines, "")
+
+	// Infrastructure section.
+	lines = append(lines, l.sectionTitle("Infrastructure"))
+	lines = append(lines, l.renderInfraSummary(data.Infra)...)
+
+	if data.Uptime != "" {
+		lines = append(lines, "")
+		lines = append(lines, l.styledMuted(fmt.Sprintf("  uptime: %s", data.Uptime)))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// composeThreeColumns places image, sysInfo, and dashboard in three columns.
+func (l *Layout) composeThreeColumns(imageContent, sysInfoPanel, dashboardPanel string) string {
+	imageLines := []string{}
+	if imageContent != "" {
+		imageLines = strings.Split(imageContent, "\n")
+	}
+	sysInfoLines := strings.Split(sysInfoPanel, "\n")
+	dashboardLines := strings.Split(dashboardPanel, "\n")
+
+	maxRows := maxInt(len(imageLines), maxInt(len(sysInfoLines), len(dashboardLines)))
+	if maxRows > l.config.TermHeight {
+		maxRows = l.config.TermHeight
+	}
+
+	separator := " | "
+	if l.config.ColorEnabled {
+		separator = " " + lipgloss.NewStyle().Foreground(colorMuted).Render("|") + " "
+	}
+
+	var result []string
+
+	for i := 0; i < maxRows; i++ {
+		imgLine := ""
+		if i < len(imageLines) {
+			imgLine = imageLines[i]
+		}
+		sysLine := ""
+		if i < len(sysInfoLines) {
+			sysLine = sysInfoLines[i]
+		}
+		dashLine := ""
+		if i < len(dashboardLines) {
+			dashLine = dashboardLines[i]
+		}
+
+		// Pad columns to their widths.
+		imgLine = l.padToWidth(imgLine, l.config.ImageCols)
+		sysLine = l.padToWidth(sysLine, l.config.SysInfoCols)
+
+		result = append(result, imgLine+separator+sysLine+separator+dashLine)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// maxInt returns the larger of two integers.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// renderInfoPanel builds the right-side info panel.
+func (l *Layout) renderInfoPanel(data InfoData) string {
+	var lines []string
+
+	hostname := l.config.Hostname
+	if hostname == "" {
+		hostname = "localhost"
+	}
+	lines = append(lines, l.renderHeader(hostname, data.StatusLevel))
+	lines = append(lines, l.separator())
+	lines = append(lines, "")
+
+	// Claude section.
+	lines = append(lines, l.sectionTitle("Claude"))
+	lines = append(lines, l.renderClaudeSummary(data.Claude)...)
+	lines = append(lines, "")
+
+	// Billing section.
+	lines = append(lines, l.sectionTitle("Billing"))
+	lines = append(lines, l.renderBillingSummary(data.Billing)...)
+	lines = append(lines, "")
+
+	// Infrastructure section.
+	lines = append(lines, l.sectionTitle("Infrastructure"))
+	lines = append(lines, l.renderInfraSummary(data.Infra)...)
+
+	if data.Uptime != "" {
+		lines = append(lines, "")
+		lines = append(lines, l.styledMuted(fmt.Sprintf("  uptime: %s", data.Uptime)))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderHeader returns the top header line with hostname and status.
+// Uses the StatusIndicator widget for colored dot icons.
+func (l *Layout) renderHeader(hostname, statusLevel string) string {
+	statusText := statusLevel
+	if statusText == "" {
+		statusText = "unknown"
+	}
+
+	if !l.config.ColorEnabled {
+		return fmt.Sprintf("%s :: %s", hostname, statusText)
+	}
+
+	hostnameStyled := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorPrimary).
+		Render(hostname)
+
+	statusIndicator := widgets.RenderStatusFromString(statusText)
+
+	return fmt.Sprintf("%s :: %s", hostnameStyled, statusIndicator)
+}
+
+// renderClaudeSummary returns a compact Claude usage summary.
+// Format per account: "  name: XX% (5h) | XX% (7d)" or "  name: ERR"
+func (l *Layout) renderClaudeSummary(data *collectors.ClaudeUsage) []string {
+	if data == nil || len(data.Accounts) == 0 {
+		return []string{l.styledMuted("  (no data)")}
+	}
+
+	var lines []string
+	for _, acct := range data.Accounts {
+		if acct.Status != "ok" && acct.Status != "active" {
+			lines = append(lines, fmt.Sprintf("  %s: ERR", acct.Name))
+			continue
+		}
+
+		switch acct.Type {
+		case "subscription":
+			line := l.formatSubscriptionAccount(acct)
+			lines = append(lines, line)
+		case "api":
+			line := l.formatAPIAccount(acct)
+			lines = append(lines, line)
+		default:
+			lines = append(lines, fmt.Sprintf("  %s: ERR", acct.Name))
+		}
+	}
+
+	return lines
+}
+
+// formatSubscriptionAccount formats a subscription Claude account with reset times.
+func (l *Layout) formatSubscriptionAccount(acct collectors.ClaudeAccountUsage) string {
+	var parts []string
+	if acct.FiveHour != nil {
+		part := fmt.Sprintf("%.0f%% (5h", acct.FiveHour.Utilization)
+		if !acct.FiveHour.ResetsAt.IsZero() {
+			resetStr := l.formatRelativeTime(acct.FiveHour.ResetsAt)
+			if resetStr != "" {
+				part += ", " + resetStr
+			}
+		}
+		part += ")"
+
+		// Add warning indicator for high utilization.
+		if acct.FiveHour.Utilization >= 80 {
+			if l.config.ColorEnabled {
+				warningIcon := lipgloss.NewStyle().Foreground(colorWarning).Render("⚠️")
+				part += " " + warningIcon
+			} else {
+				part += " ⚠️"
+			}
+		}
+		parts = append(parts, part)
+	}
+	if acct.SevenDay != nil {
+		part := fmt.Sprintf("%.0f%% (7d", acct.SevenDay.Utilization)
+		if !acct.SevenDay.ResetsAt.IsZero() {
+			resetStr := l.formatRelativeTime(acct.SevenDay.ResetsAt)
+			if resetStr != "" {
+				part += ", " + resetStr
+			}
+		}
+		part += ")"
+
+		// Add warning indicator for high utilization.
+		if acct.SevenDay.Utilization >= 80 {
+			if l.config.ColorEnabled {
+				warningIcon := lipgloss.NewStyle().Foreground(colorWarning).Render("⚠️")
+				part += " " + warningIcon
+			} else {
+				part += " ⚠️"
+			}
+		}
+		parts = append(parts, part)
+	}
+	// Extra usage (overuse credits) display.
+	if acct.ExtraUsage != nil && acct.ExtraUsage.Enabled {
+		usedDollars := acct.ExtraUsage.UsedCredits / 100.0
+		limitDollars := float64(acct.ExtraUsage.MonthlyLimit) / 100.0
+		extraPart := fmt.Sprintf("$%.0f/$%.0f extra (%.0f%%)", usedDollars, limitDollars, acct.ExtraUsage.Utilization)
+
+		if acct.ExtraUsage.Utilization >= 90 {
+			if l.config.ColorEnabled {
+				extraPart = lipgloss.NewStyle().Foreground(colorDanger).Render(extraPart)
+			}
+		} else if acct.ExtraUsage.Utilization >= 70 {
+			if l.config.ColorEnabled {
+				extraPart = lipgloss.NewStyle().Foreground(colorWarning).Render(extraPart)
+			}
+		}
+		parts = append(parts, extraPart)
+	}
+
+	if len(parts) == 0 {
+		return fmt.Sprintf("  %s: 0%% (5h)", acct.Name)
+	}
+	return fmt.Sprintf("  %s: %s", acct.Name, strings.Join(parts, " | "))
+}
+
+// formatRelativeTime formats a time.Time as a human-readable relative duration.
+// Returns strings like "2h 15m", "3d 12h", "45m", or "" if already past.
+func (l *Layout) formatRelativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	d := time.Until(t)
+	if d <= 0 {
+		return "now"
+	}
+
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
+}
+
+// formatAPIAccount formats an API Claude account.
+func (l *Layout) formatAPIAccount(acct collectors.ClaudeAccountUsage) string {
+	if acct.RateLimits == nil {
+		return fmt.Sprintf("  %s: 0/0 req", acct.Name)
+	}
+	used := acct.RateLimits.RequestsLimit - acct.RateLimits.RequestsRemaining
+	return fmt.Sprintf("  %s: %d/%d req", acct.Name, used, acct.RateLimits.RequestsLimit)
+}
+
+// renderBillingSummary returns a compact billing summary.
+// Format: "  $XX.XX / $YY.YY budget (ZZ% forecast)"
+func (l *Layout) renderBillingSummary(data *collectors.BillingData) []string {
+	if data == nil {
+		return []string{l.styledMuted("  (no data)")}
+	}
+
+	// If all providers errored and spend is zero, show N/A instead of misleading $0
+	if data.Total.SuccessCount == 0 && data.Total.ErrorCount > 0 {
+		return []string{l.styledMuted(fmt.Sprintf("  N/A (%d providers unreachable)", data.Total.ErrorCount))}
+	}
+
+	line := fmt.Sprintf("  $%.0f this month", data.Total.CurrentMonthUSD)
+
+	if data.Total.ForecastUSD != nil {
+		line += fmt.Sprintf(" ($%.0f forecast)", *data.Total.ForecastUSD)
+	}
+
+	if data.Total.BudgetUSD != nil && data.Total.CurrentMonthUSD > *data.Total.BudgetUSD {
+		if l.config.ColorEnabled {
+			overBudget := lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorDanger).
+				Render("OVER BUDGET")
+			line += " " + overBudget
+		} else {
+			line += " OVER BUDGET"
+		}
+	}
+
+	return []string{line}
+}
+
+// renderInfraSummary returns compact infrastructure status.
+// Format: "  ts: X/Y online" and "  k8s: cluster (status)"
+// Also shows per-node metrics if available.
+func (l *Layout) renderInfraSummary(data *collectors.InfraStatus) []string {
+	if data == nil {
+		return []string{l.styledMuted("  (no data)")}
+	}
+
+	var lines []string
+
+	if data.Tailscale != nil {
+		lines = append(lines, fmt.Sprintf("  ts: %d/%d online",
+			data.Tailscale.OnlineCount, data.Tailscale.TotalCount))
+
+		// Show per-node metrics for nodes that have them.
+		for _, node := range data.Tailscale.Nodes {
+			if !node.Online {
+				continue
+			}
+			if node.CPUPercent == nil && node.RAMPercent == nil && node.DiskPercent == nil {
+				continue
+			}
+
+			// Format node metrics.
+			var metrics []string
+			if node.CPUPercent != nil {
+				cpuStr := fmt.Sprintf("CPU %.0f%%", *node.CPUPercent)
+				if l.config.ColorEnabled && *node.CPUPercent >= 80 {
+					cpuStr = lipgloss.NewStyle().Foreground(colorWarning).Render(cpuStr)
+				}
+				metrics = append(metrics, cpuStr)
+			}
+			if node.RAMPercent != nil {
+				ramStr := fmt.Sprintf("RAM %.0f%%", *node.RAMPercent)
+				if l.config.ColorEnabled && *node.RAMPercent >= 80 {
+					ramStr = lipgloss.NewStyle().Foreground(colorWarning).Render(ramStr)
+				}
+				metrics = append(metrics, ramStr)
+			}
+			if node.DiskPercent != nil {
+				diskStr := fmt.Sprintf("Disk %.0f%%", *node.DiskPercent)
+				if l.config.ColorEnabled && *node.DiskPercent >= 80 {
+					diskStr = lipgloss.NewStyle().Foreground(colorWarning).Render(diskStr)
+				}
+				metrics = append(metrics, diskStr)
+			}
+
+			// Determine online status indicator.
+			statusIcon := "🟢"
+			if node.HasHighUtilization() {
+				statusIcon = "🟡"
+			}
+
+			nodeLine := fmt.Sprintf("    %s %s: %s", statusIcon, node.Hostname, strings.Join(metrics, " | "))
+			lines = append(lines, nodeLine)
+		}
+	}
+
+	for _, cluster := range data.Kubernetes {
+		statusStr := cluster.Status
+		if l.config.ColorEnabled {
+			statusStr = lipgloss.NewStyle().
+				Foreground(l.k8sStatusColor(cluster.Status)).
+				Render(cluster.Status)
+		}
+		lines = append(lines, fmt.Sprintf("  k8s: %s (%s)", cluster.Name, statusStr))
+	}
+
+	if len(lines) == 0 {
+		return []string{l.styledMuted("  (no data)")}
+	}
+
+	return lines
+}
+
+// composeSideBySide places imageContent on the left and infoPanel on the right,
+// handling line-by-line alignment. If imageContent is empty, only the info panel
+// is shown (full-width).
+func (l *Layout) composeSideBySide(imageContent, infoPanel string) string {
+	if imageContent == "" {
+		lines := strings.Split(infoPanel, "\n")
+		if len(lines) > l.config.TermHeight {
+			lines = lines[:l.config.TermHeight]
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	imageLines := strings.Split(imageContent, "\n")
+	infoLines := strings.Split(infoPanel, "\n")
+
+	maxRows := len(imageLines)
+	if len(infoLines) > maxRows {
+		maxRows = len(infoLines)
+	}
+	if maxRows > l.config.TermHeight {
+		maxRows = l.config.TermHeight
+	}
+
+	separator := " | "
+	var result []string
+
+	for i := 0; i < maxRows; i++ {
+		imgLine := ""
+		if i < len(imageLines) {
+			imgLine = imageLines[i]
+		}
+		infoLine := ""
+		if i < len(infoLines) {
+			infoLine = infoLines[i]
+		}
+
+		// Pad the image line to ImageCols width.
+		imgLine = l.padToWidth(imgLine, l.config.ImageCols)
+
+		result = append(result, imgLine+separator+infoLine)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// padToWidth pads or truncates a string to exactly the given width.
+// It accounts for visible character width, not byte length.
+func (l *Layout) padToWidth(s string, width int) string {
+	visible := visibleLen(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
+}
+
+// visibleLen returns the visible length of a string, stripping ANSI escape sequences.
+func visibleLen(s string) int {
+	length := 0
+	inEscape := false
+	for _, r := range s {
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '~' {
+				inEscape = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		length++
+	}
+	return length
+}
+
+// separator returns a styled horizontal separator line.
+func (l *Layout) separator() string {
+	sep := strings.Repeat("\u2500", 24)
+	if l.config.ColorEnabled {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render(sep)
+	}
+	return sep
+}
+
+// sectionTitle returns a styled section title.
+func (l *Layout) sectionTitle(title string) string {
+	if l.config.ColorEnabled {
+		return lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSecondary).
+			Render(title)
+	}
+	return title
+}
+
+// styledMuted returns a muted (gray) styled string.
+func (l *Layout) styledMuted(s string) string {
+	if l.config.ColorEnabled {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render(s)
+	}
+	return s
+}
+
+// statusColor returns the lipgloss color for a given status level.
+func (l *Layout) statusColor(status string) lipgloss.Color {
+	switch status {
+	case "healthy":
+		return colorSuccess
+	case "warning":
+		return colorWarning
+	case "critical":
+		return colorDanger
+	default:
+		return colorMuted
+	}
+}
+
+// k8sStatusColor returns the color for a Kubernetes cluster status.
+func (l *Layout) k8sStatusColor(status string) lipgloss.Color {
+	switch status {
+	case "healthy":
+		return colorSuccess
+	case "degraded":
+		return colorWarning
+	case "offline":
+		return colorDanger
+	default:
+		return colorMuted
+	}
+}

@@ -1,0 +1,12 @@
+Claude                       │ Trends                                                             │ 
+  personal: ERR (auth_failed) │   (no data)                                                        │ 
+  work: ERR (rate_limited)   │                                                                    │ 
+                             │                                                                    │ 
+Billing                      │                                                                    │ 
+  digitalocean: ERR          │                                                                    │ 
+  civo: ERR                  │                                                                    │ 
+  Total: $0 (error)          │                                                                    │ 
+                             │                                                                    │ 
+Infrastructure               │                                                                    │ 
+  ts: connection failed      │                                                                    │ 
+  k8s: bitter-darkness (unreachable) │                                                                    │ 

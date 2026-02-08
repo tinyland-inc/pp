@@ -1,0 +1,812 @@
+// Package banner orchestrates the full banner generation pipeline.
+//
+// The banner combines cached collector data (Claude usage, billing, infrastructure),
+// system status evaluation, optional waifu image selection, and layout rendering
+// into a single terminal-ready string. It is designed to complete in under 100ms
+// when all data is cached.
+package banner
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"os"
+	"time"
+
+	"gitlab.com/tinyland/lab/prompt-pulse/cache"
+	"gitlab.com/tinyland/lab/prompt-pulse/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/layout"
+	"gitlab.com/tinyland/lab/prompt-pulse/display/widgets"
+	"gitlab.com/tinyland/lab/prompt-pulse/status"
+	"gitlab.com/tinyland/lab/prompt-pulse/waifu"
+)
+
+// BannerConfig controls banner generation behavior.
+type BannerConfig struct {
+	// CacheDir is the prompt-pulse cache directory.
+	CacheDir string
+	// CacheTTL is how long cached collector data is considered fresh.
+	CacheTTL time.Duration
+	// WaifuEnabled enables waifu image display.
+	WaifuEnabled bool
+	// WaifuCategory overrides automatic category selection.
+	WaifuCategory string
+	// WaifuCacheDir is the directory for cached waifu images.
+	WaifuCacheDir string
+	// WaifuCacheTTL is how long cached images are valid.
+	WaifuCacheTTL time.Duration
+	// WaifuMaxCacheMB is the max image cache size.
+	WaifuMaxCacheMB int
+	// WaifuSessionID is the shell session ID for per-session waifu caching.
+	// If empty, falls back to GetSessionKey() or category-based caching.
+	WaifuSessionID string
+	// WaifuMaxSessions is the max number of session images to keep (LRU eviction).
+	WaifuMaxSessions int
+	// FastfetchEnabled enables fastfetch system info in the center column.
+	FastfetchEnabled bool
+	// Hostname overrides os.Hostname().
+	Hostname string
+	// TermWidth overrides terminal width detection.
+	TermWidth int
+	// TermHeight overrides terminal height detection.
+	TermHeight int
+	// ColorEnabled enables ANSI color output. When false, all output is plain text.
+	// This is set to false when NO_COLOR is set or stdout is not a terminal.
+	ColorEnabled bool
+	// Logger for banner operations.
+	Logger *slog.Logger
+}
+
+// DefaultBannerConfig returns sensible defaults for banner generation.
+func DefaultBannerConfig() BannerConfig {
+	home, _ := os.UserHomeDir()
+	cacheBase := home + "/.cache/prompt-pulse"
+	return BannerConfig{
+		CacheDir:         cacheBase,
+		CacheTTL:         15 * time.Minute,
+		WaifuEnabled:     false,
+		WaifuCacheDir:    cacheBase + "/waifu",
+		WaifuCacheTTL:    24 * time.Hour,
+		WaifuMaxCacheMB:  50,
+		WaifuMaxSessions: waifu.DefaultMaxSessions,
+		ColorEnabled:     true,
+		TermWidth:        80,
+		TermHeight:       24,
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+// Banner orchestrates the full banner generation pipeline:
+//  1. Load cached collector data
+//  2. Evaluate system status
+//  3. Select waifu category based on status
+//  4. Fetch/cache waifu image
+//  5. Render banner layout
+type Banner struct {
+	config BannerConfig
+}
+
+// NewBanner creates a Banner with the given configuration.
+// If Logger is nil, a no-op logger is used.
+func NewBanner(cfg BannerConfig) *Banner {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	return &Banner{config: cfg}
+}
+
+// Generate produces the complete banner string.
+// It reads cached collector data, evaluates status, optionally fetches a waifu
+// image, and composes the final layout. Designed to complete in <100ms with
+// cached data. Returns the banner string or an error if rendering fails.
+func (b *Banner) Generate(ctx context.Context) (string, error) {
+	// Check for context cancellation early.
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
+	// Step 1: Open cache store. If it fails, continue with nil data.
+	var claude *collectors.ClaudeUsage
+	var billing *collectors.BillingData
+	var infra *collectors.InfraStatus
+	var fastfetch *collectors.FastfetchData
+	var sysmetrics *collectors.SysMetricsData
+
+	store, err := cache.NewStore(b.config.CacheDir, b.config.Logger)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to open cache store", "error", err)
+	} else {
+		claude, billing, infra, fastfetch, sysmetrics = b.loadCachedDataWithFastfetch(store)
+	}
+
+	// Fastfetch data will be integrated into buildSections()
+
+	// Step 2: Evaluate system status.
+	evaluator := status.NewEvaluator(status.DefaultEvaluatorConfig())
+	systemStatus := evaluator.Evaluate(claude, billing, infra)
+
+	// Step 3-4: Optionally fetch waifu image with responsive sizing.
+	var imageContent string
+	if b.config.WaifuEnabled {
+		// Determine layout mode and waifu size based on terminal width.
+		layoutMode := DetermineLayoutMode(b.config.TermWidth)
+		waifuSize := GetWaifuSize(layoutMode)
+
+		selectorCfg := status.DefaultSelectorConfig()
+		if b.config.WaifuCategory != "" {
+			selectorCfg.OverrideCategory = b.config.WaifuCategory
+		}
+		selector := status.NewSelector(selectorCfg)
+		category := selector.SelectCategory(systemStatus.Overall)
+
+		imageContent = b.fetchWaifuImage(ctx, category, waifuSize.Cols, waifuSize.Rows)
+	}
+
+	// Step 5: Determine hostname.
+	hostname := b.config.Hostname
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
+	}
+
+	// Step 6: Compute uptime string.
+	uptime := computeUptime()
+
+	// Step 7: Build responsive layout configuration.
+	width := b.config.TermWidth
+	height := b.config.TermHeight
+	if width == 0 || height == 0 {
+		width, height = layout.DetectTerminalSize()
+	}
+
+	responsiveCfg := layout.NewResponsiveConfig(width, height)
+	responsiveCfg.ColorEnabled = b.config.ColorEnabled
+
+	// Step 8: Build sections from collector data.
+	sections := b.buildSections(claude, billing, infra, fastfetch, sysmetrics, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
+
+	// Step 9: Render using responsive layout.
+	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
+	result := responsiveLayout.Render(imageContent, sections, billing)
+
+	return result.Output, nil
+}
+
+// loadCachedData reads collector data from the cache store.
+// Returns nil pointers for any data that cannot be loaded.
+func (b *Banner) loadCachedData(store *cache.Store) (claude *collectors.ClaudeUsage, billing *collectors.BillingData, infra *collectors.InfraStatus) {
+	ttl := b.config.CacheTTL
+
+	var err error
+	claude, _, err = cache.GetTyped[collectors.ClaudeUsage](store, "claude", ttl)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to load claude cache", "error", err)
+		claude = nil
+	}
+
+	billing, _, err = cache.GetTyped[collectors.BillingData](store, "billing", ttl)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to load billing cache", "error", err)
+		billing = nil
+	}
+
+	infra, _, err = cache.GetTyped[collectors.InfraStatus](store, "infra", ttl)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to load infra cache", "error", err)
+		infra = nil
+	}
+
+	return claude, billing, infra
+}
+
+// loadCachedDataWithFastfetch reads collector data including fastfetch and sysmetrics from the cache store.
+// Returns nil pointers for any data that cannot be loaded.
+func (b *Banner) loadCachedDataWithFastfetch(store *cache.Store) (claude *collectors.ClaudeUsage, billing *collectors.BillingData, infra *collectors.InfraStatus, fastfetch *collectors.FastfetchData, sysmetrics *collectors.SysMetricsData) {
+	// Load standard collectors.
+	claude, billing, infra = b.loadCachedData(store)
+
+	// Load fastfetch data if enabled.
+	if b.config.FastfetchEnabled {
+		var err error
+		fastfetch, _, err = cache.GetTyped[collectors.FastfetchData](store, "fastfetch", b.config.CacheTTL)
+		if err != nil {
+			b.config.Logger.Warn("banner: failed to load fastfetch cache", "error", err)
+			fastfetch = nil
+		}
+	}
+
+	// Load sysmetrics data (always attempt, used in Wide/UltraWide modes).
+	var err error
+	sysmetrics, _, err = cache.GetTyped[collectors.SysMetricsData](store, "sysmetrics", b.config.CacheTTL)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to load sysmetrics cache", "error", err)
+		sysmetrics = nil
+	}
+
+	return claude, billing, infra, fastfetch, sysmetrics
+}
+
+// fetchWaifuImage retrieves a waifu image for the given category with the specified size.
+// If WaifuSessionID is explicitly set (via --session-id flag or PPULSE_SESSION_ID env var),
+// uses per-session caching where each shell session gets its own unique image
+// with LRU eviction when MaxSessions is exceeded. This enables fetching new images
+// from the API if none is cached for the session.
+// Otherwise falls back to category-based caching (all sessions share same image),
+// which only reads from existing cache without network calls.
+// The maxCols and maxRows parameters control the rendered image dimensions.
+// Returns the rendered image string, or empty string on any error (non-fatal).
+func (b *Banner) fetchWaifuImage(ctx context.Context, category string, maxCols, maxRows int) string {
+	select {
+	case <-ctx.Done():
+		return ""
+	default:
+	}
+
+	var data []byte
+	var sessionErr error
+
+	// Only use session-based caching if explicitly configured (via flag) or
+	// if PPULSE_SESSION_ID environment variable is set. This avoids making
+	// network calls when the user hasn't opted into session-based waifu.
+	sessionID := b.config.WaifuSessionID
+	if sessionID == "" {
+		// Only check environment, don't auto-generate from PID.
+		// This ensures we don't make network calls without explicit opt-in.
+		if envID := os.Getenv("PPULSE_SESSION_ID"); envID != "" {
+			sessionID = envID
+		}
+	}
+
+	// Use session-aware caching if we have an explicit session ID.
+	if sessionID != "" {
+		sessionMgr, err := waifu.NewSessionManager(waifu.SessionManagerConfig{
+			CacheDir:        b.config.WaifuCacheDir,
+			MaxSessions:     b.config.WaifuMaxSessions,
+			ImageCacheTTL:   b.config.WaifuCacheTTL,
+			ImageMaxCacheMB: b.config.WaifuMaxCacheMB,
+			Logger:          b.config.Logger,
+		})
+		if err != nil {
+			b.config.Logger.Warn("banner: failed to create session manager", "error", err)
+			// Fall back to category-based caching below.
+		} else {
+			// Create API client for potential fetch.
+			api := waifu.NewAPIClient(b.config.Logger)
+			processCfg := waifu.DefaultProcessConfig()
+
+			data, sessionErr = sessionMgr.GetOrFetch(ctx, sessionID, category, api, processCfg)
+			if sessionErr != nil {
+				b.config.Logger.Warn("banner: session fetch error", "error", sessionErr, "session", sessionID)
+				// Fall back to category-based caching below.
+				data = nil
+			}
+		}
+	}
+
+	// Fall back to category-based caching (original behavior, read-only).
+	if data == nil {
+		imgCache, err := waifu.NewImageCache(waifu.ImageCacheConfig{
+			Dir:       b.config.WaifuCacheDir,
+			TTL:       b.config.WaifuCacheTTL,
+			MaxSizeMB: b.config.WaifuMaxCacheMB,
+			Logger:    b.config.Logger,
+		})
+		if err != nil {
+			b.config.Logger.Warn("banner: failed to create image cache", "error", err)
+			return ""
+		}
+
+		cacheKey := "banner-" + category
+		data, fresh, err := imgCache.Get(cacheKey)
+		if err != nil {
+			b.config.Logger.Warn("banner: image cache read error", "error", err, "key", cacheKey)
+			return ""
+		}
+		if data == nil || !fresh {
+			b.config.Logger.Debug("banner: no cached image for category", "category", category, "key", cacheKey)
+			return ""
+		}
+	}
+
+	rendered, err := waifu.RenderImage(data, waifu.RenderConfig{
+		Protocol: waifu.DetectProtocol(),
+		MaxCols:  maxCols,
+		MaxRows:  maxRows,
+	})
+	if err != nil {
+		b.config.Logger.Warn("banner: image render error", "error", err)
+		return ""
+	}
+
+	return rendered
+}
+
+// computeUptime returns a human-readable system uptime string.
+// Returns "unknown" if the uptime cannot be determined.
+func computeUptime() string {
+	d := getSystemUptime()
+	if d == 0 {
+		return "unknown"
+	}
+
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return formatDuration(days, hours, mins, true)
+	}
+	if hours > 0 {
+		return formatDuration(days, hours, mins, false)
+	}
+	return formatMinutes(mins)
+}
+
+// parseUptimeSeconds parses the seconds value from /proc/uptime content.
+func parseUptimeSeconds(data []byte) (float64, error) {
+	var uptime, idle float64
+	_, err := parseFloatPair(string(data), &uptime, &idle)
+	if err != nil {
+		return 0, err
+	}
+	return uptime, nil
+}
+
+// parseFloatPair reads two space-separated floats from a string.
+func parseFloatPair(s string, a, b *float64) (int, error) {
+	var n int
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' || s[i] == '\n' {
+			n = i
+			break
+		}
+	}
+	if n == 0 {
+		n = len(s)
+	}
+
+	val, err := parseFloat(s[:n])
+	if err != nil {
+		return 0, err
+	}
+	*a = val
+	return 1, nil
+}
+
+// parseFloat is a simple float parser for uptime values.
+func parseFloat(s string) (float64, error) {
+	var result float64
+	var frac float64
+	var fracDiv float64 = 1
+	inFrac := false
+	for _, ch := range s {
+		if ch == '.' {
+			inFrac = true
+			continue
+		}
+		if ch < '0' || ch > '9' {
+			continue
+		}
+		if inFrac {
+			fracDiv *= 10
+			frac += float64(ch-'0') / fracDiv
+		} else {
+			result = result*10 + float64(ch-'0')
+		}
+	}
+	return result + frac, nil
+}
+
+// formatDuration formats days, hours, minutes into a human-readable string.
+func formatDuration(days, hours, mins int, showDays bool) string {
+	if showDays {
+		return intToStr(days) + "d " + intToStr(hours) + "h " + intToStr(mins) + "m"
+	}
+	return intToStr(hours) + "h " + intToStr(mins) + "m"
+}
+
+// formatMinutes formats minutes-only uptime.
+func formatMinutes(mins int) string {
+	return intToStr(mins) + "m"
+}
+
+// intToStr converts a non-negative integer to a string without importing strconv.
+func intToStr(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	digits := make([]byte, 0, 10)
+	for n > 0 {
+		digits = append(digits, byte('0'+n%10))
+		n /= 10
+	}
+	// Reverse.
+	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
+		digits[i], digits[j] = digits[j], digits[i]
+	}
+	return string(digits)
+}
+
+// GenerateResponsive produces the banner using the responsive layout system.
+// It auto-detects terminal size and selects the appropriate layout mode:
+//   - Compact (80x24): Vertical stack, no images
+//   - Standard (120x40): Side-by-side with 22-column image
+//   - Wide (160x60): 3-column with full metrics
+//   - UltraWide (200x80): 4-column with sparklines
+//
+// Pass 0, 0 for width/height to auto-detect terminal size.
+func (b *Banner) GenerateResponsive(ctx context.Context) (string, error) {
+	// Check for context cancellation early.
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
+	// Step 1: Open cache store. If it fails, continue with nil data.
+	var claude *collectors.ClaudeUsage
+	var billing *collectors.BillingData
+	var infra *collectors.InfraStatus
+
+	store, err := cache.NewStore(b.config.CacheDir, b.config.Logger)
+	if err != nil {
+		b.config.Logger.Warn("banner: failed to open cache store", "error", err)
+	} else {
+		claude, billing, infra = b.loadCachedData(store)
+	}
+
+	// Step 2: Evaluate system status.
+	evaluator := status.NewEvaluator(status.DefaultEvaluatorConfig())
+	systemStatus := evaluator.Evaluate(claude, billing, infra)
+
+	// Step 3: Optionally fetch waifu image with responsive sizing.
+	var imageContent string
+	if b.config.WaifuEnabled {
+		// Determine layout mode and waifu size based on terminal width.
+		layoutMode := DetermineLayoutMode(b.config.TermWidth)
+		waifuSize := GetWaifuSize(layoutMode)
+
+		selectorCfg := status.DefaultSelectorConfig()
+		if b.config.WaifuCategory != "" {
+			selectorCfg.OverrideCategory = b.config.WaifuCategory
+		}
+		selector := status.NewSelector(selectorCfg)
+		category := selector.SelectCategory(systemStatus.Overall)
+		imageContent = b.fetchWaifuImage(ctx, category, waifuSize.Cols, waifuSize.Rows)
+	}
+
+	// Step 4: Determine hostname.
+	hostname := b.config.Hostname
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
+	}
+
+	// Step 5: Compute uptime string.
+	uptime := computeUptime()
+
+	// Step 6: Build responsive layout configuration.
+	width := b.config.TermWidth
+	height := b.config.TermHeight
+	if width == 0 || height == 0 {
+		width, height = layout.DetectTerminalSize()
+	}
+
+	responsiveCfg := layout.NewResponsiveConfig(width, height)
+	responsiveCfg.ColorEnabled = b.config.ColorEnabled
+
+	// Only show image if enabled in the layout mode.
+	if !responsiveCfg.Features.ShowImage {
+		imageContent = ""
+	}
+
+	// Step 7: Build sections from data (no fastfetch or sysmetrics in this code path).
+	sections := b.buildSections(claude, billing, infra, nil, nil, hostname, systemStatus.Overall.String(), uptime, responsiveCfg.Features)
+
+	// Step 8: Render using responsive layout.
+	responsiveLayout := layout.NewResponsiveLayout(responsiveCfg)
+	result := responsiveLayout.Render(imageContent, sections, billing)
+
+	return result.Output, nil
+}
+
+// buildSections converts collector data into layout sections for the responsive layout.
+func (b *Banner) buildSections(
+	claude *collectors.ClaudeUsage,
+	billing *collectors.BillingData,
+	infra *collectors.InfraStatus,
+	fastfetch *collectors.FastfetchData,
+	sysmetrics *collectors.SysMetricsData,
+	hostname, statusLevel, uptime string,
+	features layout.LayoutFeatures,
+) []layout.Section {
+	var sections []layout.Section
+
+	// Header section with status.
+	headerContent := []string{
+		hostname + " :: " + statusLevel,
+	}
+	if uptime != "" && uptime != "unknown" {
+		headerContent = append(headerContent, "uptime: "+uptime)
+	}
+	sections = append(sections, layout.Section{
+		Title:   "Status",
+		Content: headerContent,
+	})
+
+	// Claude section.
+	claudeContent := b.formatClaudeForSection(claude, features.ShowFullMetrics)
+	sections = append(sections, layout.Section{
+		Title:   "Claude",
+		Content: claudeContent,
+	})
+
+	// Billing section.
+	billingContent := b.formatBillingForSection(billing, features)
+	sections = append(sections, layout.Section{
+		Title:   "Billing",
+		Content: billingContent,
+	})
+
+	// Infrastructure section.
+	infraContent := b.formatInfraForSection(infra, features.ShowNodeMetrics)
+	sections = append(sections, layout.Section{
+		Title:   "Infrastructure",
+		Content: infraContent,
+	})
+
+	// System section (fastfetch).
+	if fastfetch != nil && !fastfetch.IsEmpty() {
+		fastfetchContent := b.formatFastfetchForSection(fastfetch)
+		sections = append(sections, layout.Section{
+			Title:   "System",
+			Content: fastfetchContent,
+		})
+	}
+
+	// SysMetrics section (CPU/RAM/Disk - shown in Wide and UltraWide modes).
+	if features.ShowSysMetrics {
+		sysmetricsContent := b.formatSysMetricsForSection(sysmetrics, features)
+		sections = append(sections, layout.Section{
+			Title:   "SysMetrics",
+			Content: sysmetricsContent,
+		})
+	}
+
+	return sections
+}
+
+// formatClaudeForSection formats Claude usage data for a layout section.
+// Uses the ClaudePanel widget for richer display when showFull is true.
+func (b *Banner) formatClaudeForSection(data *collectors.ClaudeUsage, showFull bool) []string {
+	if data == nil || len(data.Accounts) == 0 {
+		return []string{"(no data)"}
+	}
+
+	panel := widgets.NewClaudePanel(data, 60)
+	if showFull {
+		return splitLines(panel.Render())
+	}
+	return []string{panel.RenderCompact()}
+}
+
+// formatBillingForSection formats billing data for a layout section.
+// Uses LayoutFeatures to determine detail level:
+//   - ShowFullMetrics: per-provider detail lines
+//   - ShowBillingDelta: month-over-month comparison (Wide/UltraWide)
+func (b *Banner) formatBillingForSection(data *collectors.BillingData, features layout.LayoutFeatures) []string {
+	if data == nil {
+		return []string{"(no data)"}
+	}
+
+	// If all providers errored and spend is zero, show N/A instead of misleading $0
+	if data.Total.SuccessCount == 0 && data.Total.ErrorCount > 0 {
+		return []string{"N/A (" + intToStr(data.Total.ErrorCount) + " providers unreachable)"}
+	}
+
+	line := "$" + intToStr(int(data.Total.CurrentMonthUSD)) + " this month"
+
+	if data.Total.ForecastUSD != nil {
+		line += " ($" + intToStr(int(*data.Total.ForecastUSD)) + " forecast)"
+	}
+
+	if data.Total.BudgetUSD != nil && data.Total.CurrentMonthUSD > *data.Total.BudgetUSD {
+		line += " OVER BUDGET"
+	}
+
+	lines := []string{line}
+
+	// Per-provider detail when full metrics are enabled.
+	if features.ShowFullMetrics && len(data.Providers) > 0 {
+		for _, p := range data.Providers {
+			if p.Status == "ok" {
+				pLine := "  " + p.Provider + ": $" + intToStr(int(p.CurrentMonth.SpendUSD))
+				if p.CurrentMonth.ForecastUSD != nil {
+					pLine += " (~$" + intToStr(int(*p.CurrentMonth.ForecastUSD)) + " forecast)"
+				}
+				// Month-over-month delta (Wide/UltraWide).
+				if features.ShowBillingDelta && p.PreviousMonth != nil {
+					prev := int(*p.PreviousMonth)
+					curr := int(p.CurrentMonth.SpendUSD)
+					delta := curr - prev
+					if delta > 0 {
+						pLine += " [+" + intToStr(delta) + "]"
+					} else if delta < 0 {
+						pLine += " [" + intToStr(delta) + "]"
+					}
+				}
+				lines = append(lines, pLine)
+			} else {
+				lines = append(lines, "  "+p.Provider+": ERR")
+			}
+		}
+	}
+
+	return lines
+}
+
+// formatInfraForSection formats infrastructure data for a layout section.
+// When showNodeMetrics is true, uses the InfraPanel widget for tree-structured display.
+func (b *Banner) formatInfraForSection(data *collectors.InfraStatus, showNodeMetrics bool) []string {
+	if data == nil {
+		return []string{"(no data)"}
+	}
+
+	// Use InfraPanel widget for rich tree display when node metrics are enabled.
+	if showNodeMetrics {
+		panel := widgets.NewInfraPanel(widgets.InfraPanelConfig{
+			Width:          60,
+			ShowMiniGauges: true,
+			GaugeWidth:     6,
+			ColorEnabled:   true,
+			MaxNodes:       6,
+		})
+		rendered := panel.Render(data)
+		if rendered != "" {
+			return splitLines(rendered)
+		}
+	}
+
+	// Compact inline display for non-node-metrics modes.
+	var lines []string
+
+	if data.Tailscale != nil {
+		lines = append(lines, "ts: "+intToStr(data.Tailscale.OnlineCount)+"/"+intToStr(data.Tailscale.TotalCount)+" online")
+	}
+
+	for _, cluster := range data.Kubernetes {
+		lines = append(lines, "k8s: "+cluster.Name+" ("+cluster.Status+")")
+	}
+
+	if len(lines) == 0 {
+		return []string{"(no data)"}
+	}
+
+	return lines
+}
+
+// formatFastfetchForSection formats fastfetch system info for a layout section.
+func (b *Banner) formatFastfetchForSection(data *collectors.FastfetchData) []string {
+	if data == nil || data.IsEmpty() {
+		return []string{"(no data)"}
+	}
+	return data.FormatCompact()
+}
+
+// formatSysMetricsForSection formats system metrics data for a layout section.
+// In Wide mode: shows inline "CPU: 45% | RAM: 62% | Disk: 78%"
+// In UltraWide mode: shows sparklines alongside current values.
+func (b *Banner) formatSysMetricsForSection(data *collectors.SysMetricsData, features layout.LayoutFeatures) []string {
+	if data == nil {
+		return []string{"(no data)"}
+	}
+
+	if features.ShowSysMetricsSparklines && (len(data.CPUHistory) > 0 || len(data.RAMHistory) > 0 || len(data.DiskHistory) > 0) {
+		// UltraWide: sparklines alongside current values.
+		var lines []string
+
+		if len(data.CPUHistory) > 0 {
+			sparkline := widgets.RenderSparkline(widgets.SparklineConfig{
+				Data:  data.CPUHistory,
+				Width: 15,
+				Label: "CPU",
+			})
+			lines = append(lines, sparkline+" "+intToStr(int(data.CPU))+"%")
+		} else {
+			lines = append(lines, "CPU: "+intToStr(int(data.CPU))+"%")
+		}
+
+		if len(data.RAMHistory) > 0 {
+			sparkline := widgets.RenderSparkline(widgets.SparklineConfig{
+				Data:  data.RAMHistory,
+				Width: 15,
+				Label: "RAM",
+			})
+			lines = append(lines, sparkline+" "+intToStr(int(data.RAM))+"%")
+		} else {
+			lines = append(lines, "RAM: "+intToStr(int(data.RAM))+"%")
+		}
+
+		if len(data.DiskHistory) > 0 {
+			sparkline := widgets.RenderSparkline(widgets.SparklineConfig{
+				Data:  data.DiskHistory,
+				Width: 15,
+				Label: "Disk",
+			})
+			lines = append(lines, sparkline+" "+intToStr(int(data.Disk))+"%")
+		} else {
+			lines = append(lines, "Disk: "+intToStr(int(data.Disk))+"%")
+		}
+
+		// Add load average.
+		lines = append(lines, "Load: "+formatFloat1(data.LoadAvg1)+" "+formatFloat1(data.LoadAvg5)+" "+formatFloat1(data.LoadAvg15))
+
+		return lines
+	}
+
+	// Wide mode: inline summary.
+	summary := "CPU: " + intToStr(int(data.CPU)) + "% | RAM: " + intToStr(int(data.RAM)) + "% | Disk: " + intToStr(int(data.Disk)) + "%"
+	lines := []string{summary}
+
+	if data.LoadAvg1 > 0 {
+		lines = append(lines, "Load: "+formatFloat1(data.LoadAvg1)+" "+formatFloat1(data.LoadAvg5)+" "+formatFloat1(data.LoadAvg15))
+	}
+
+	return lines
+}
+
+// formatFloat1 formats a float to 1 decimal place without importing fmt.
+func formatFloat1(f float64) string {
+	whole := int(f)
+	frac := int((f - float64(whole)) * 10)
+	if frac < 0 {
+		frac = -frac
+	}
+	return intToStr(whole) + "." + intToStr(frac)
+}
+
+// splitLines splits a string by newline characters without importing strings.
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+// join concatenates strings with a separator.
+func join(parts []string, sep string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		result += sep + parts[i]
+	}
+	return result
+}
+
+// GetLayoutMode returns the layout mode that would be used for the current configuration.
+// Pass 0, 0 to auto-detect terminal size.
+func (b *Banner) GetLayoutMode(width, height int) layout.LayoutMode {
+	if width == 0 || height == 0 {
+		width, height = layout.DetectTerminalSize()
+	}
+	return layout.DetectLayoutMode(width, height)
+}

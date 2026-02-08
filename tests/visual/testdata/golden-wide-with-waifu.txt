@@ -1,0 +1,15 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Claude                                             │ Infrastructure                            │ Trends
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   personal: 45% (5h) | 12% (7d)                    │   ts: 4/5 online                          │   (no data)
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   work: 80% (5h) | 65% (7d)                        │   k8s: bitter-darkness (healthy)          │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │   k8s: staging (degraded)                 │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │ Billing                                            │   uptime: 3d 14h                          │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   digitalocean: $45.50                             │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   civo: $32.00                                     │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   aws: $64.50                                      │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │   Total: $142 this month | $180 forecast           │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX │                                                    │                                           │ 
