@@ -1,0 +1,4 @@
+load("@gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix gitlab.com/tinyland/projects/prompt-pulse
+gazelle(name = "gazelle")
