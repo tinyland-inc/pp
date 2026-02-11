@@ -62,18 +62,35 @@ func DefaultRenderConfig() RenderConfig {
 
 // DetectProtocol inspects environment variables to determine which image
 // rendering protocol the current terminal supports.
+// It is SSH-aware: over SSH sessions, Kitty protocol is downgraded to Unicode
+// because the Kitty Graphics Protocol produces garbled output when TERM_PROGRAM
+// is inherited but the SSH transport cannot carry the binary escape sequences.
 func DetectProtocol() RenderProtocol {
+	// Check SSH first: if we're in an SSH session, never return Kitty.
+	// TERM_PROGRAM and KITTY_WINDOW_ID are often inherited over SSH
+	// but the Kitty Graphics Protocol doesn't work over SSH transport.
+	isSSH := render.IsSSHSession()
+
 	termProgram := os.Getenv("TERM_PROGRAM")
 	switch strings.ToLower(termProgram) {
 	case "ghostty", "kitty", "wezterm":
+		if isSSH {
+			return ProtocolUnicode
+		}
 		return ProtocolKitty
 	}
 
 	if os.Getenv("TERM") == "xterm-kitty" {
+		if isSSH {
+			return ProtocolUnicode
+		}
 		return ProtocolKitty
 	}
 
 	if os.Getenv("KITTY_WINDOW_ID") != "" {
+		if isSSH {
+			return ProtocolUnicode
+		}
 		return ProtocolKitty
 	}
 
@@ -190,10 +207,19 @@ func renderNone() (string, error) {
 // renderChafa uses the chafa CLI tool for auto-detected terminal graphics.
 // Delegates to the high-quality render.RenderWithChafa() with full ChafaConfig support
 // (truecolor, all symbols, dithering) instead of the simple --size/--format flags.
+//
+// Over SSH sessions, the format is forced to "symbols" to prevent chafa from
+// auto-detecting Kitty protocol via inherited TERM_PROGRAM, which would produce
+// garbled binary escape sequences that the SSH transport cannot carry.
 func renderChafa(imageData []byte, cols, rows int) (string, error) {
 	cfg := render.DefaultChafaConfig()
 	cfg.Cols = cols
 	cfg.Rows = rows
+	// Force symbols format over SSH to prevent chafa from auto-detecting
+	// Kitty/iTerm2/Sixel protocols that don't work over SSH transport.
+	if render.IsSSHSession() {
+		cfg.Format = "symbols"
+	}
 	return render.RenderWithChafa(imageData, cfg)
 }
 

@@ -74,9 +74,20 @@ func clearEnv(t *testing.T, key string) {
 	})
 }
 
+// clearSSHEnv clears SSH-related environment variables so tests can simulate
+// a non-SSH environment. Without this, tests running on an SSH session would
+// see SSH_CLIENT/SSH_CONNECTION/SSH_TTY and downgrade Kitty to Unicode.
+func clearSSHEnv(t *testing.T) {
+	t.Helper()
+	clearEnv(t, "SSH_CLIENT")
+	clearEnv(t, "SSH_CONNECTION")
+	clearEnv(t, "SSH_TTY")
+}
+
 // --- DetectProtocol tests ---
 
 func TestDetectProtocol_Ghostty(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM")
 	clearEnv(t, "KITTY_WINDOW_ID")
 	withEnv(t, "TERM_PROGRAM", "ghostty")
@@ -87,6 +98,7 @@ func TestDetectProtocol_Ghostty(t *testing.T) {
 }
 
 func TestDetectProtocol_Kitty(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM")
 	clearEnv(t, "KITTY_WINDOW_ID")
 	withEnv(t, "TERM_PROGRAM", "kitty")
@@ -97,6 +109,7 @@ func TestDetectProtocol_Kitty(t *testing.T) {
 }
 
 func TestDetectProtocol_WezTerm(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM")
 	clearEnv(t, "KITTY_WINDOW_ID")
 	withEnv(t, "TERM_PROGRAM", "WezTerm")
@@ -107,6 +120,7 @@ func TestDetectProtocol_WezTerm(t *testing.T) {
 }
 
 func TestDetectProtocol_XtermKitty(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM_PROGRAM")
 	clearEnv(t, "KITTY_WINDOW_ID")
 	withEnv(t, "TERM", "xterm-kitty")
@@ -117,6 +131,7 @@ func TestDetectProtocol_XtermKitty(t *testing.T) {
 }
 
 func TestDetectProtocol_KittyWindowID(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM_PROGRAM")
 	clearEnv(t, "TERM")
 	withEnv(t, "KITTY_WINDOW_ID", "42")
@@ -127,12 +142,72 @@ func TestDetectProtocol_KittyWindowID(t *testing.T) {
 }
 
 func TestDetectProtocol_Unknown(t *testing.T) {
+	clearSSHEnv(t)
 	clearEnv(t, "TERM_PROGRAM")
 	clearEnv(t, "TERM")
 	clearEnv(t, "KITTY_WINDOW_ID")
 
 	if got := DetectProtocol(); got != ProtocolUnicode {
 		t.Errorf("DetectProtocol() = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
+	}
+}
+
+// --- SSH downgrade tests ---
+// When SSH_CLIENT, SSH_CONNECTION, or SSH_TTY is set, Kitty protocol
+// should be downgraded to Unicode to prevent garbled output.
+
+func TestDetectProtocol_SSH_DowngradesGhostty(t *testing.T) {
+	withEnv(t, "SSH_CLIENT", "192.168.1.1 12345 22")
+	clearEnv(t, "TERM")
+	clearEnv(t, "KITTY_WINDOW_ID")
+	withEnv(t, "TERM_PROGRAM", "ghostty")
+
+	if got := DetectProtocol(); got != ProtocolUnicode {
+		t.Errorf("DetectProtocol() over SSH = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
+	}
+}
+
+func TestDetectProtocol_SSH_DowngradesKitty(t *testing.T) {
+	withEnv(t, "SSH_CONNECTION", "192.168.1.1 12345 10.0.0.1 22")
+	clearEnv(t, "TERM")
+	clearEnv(t, "KITTY_WINDOW_ID")
+	withEnv(t, "TERM_PROGRAM", "kitty")
+
+	if got := DetectProtocol(); got != ProtocolUnicode {
+		t.Errorf("DetectProtocol() over SSH = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
+	}
+}
+
+func TestDetectProtocol_SSH_DowngradesXtermKitty(t *testing.T) {
+	withEnv(t, "SSH_TTY", "/dev/pts/0")
+	clearEnv(t, "TERM_PROGRAM")
+	clearEnv(t, "KITTY_WINDOW_ID")
+	withEnv(t, "TERM", "xterm-kitty")
+
+	if got := DetectProtocol(); got != ProtocolUnicode {
+		t.Errorf("DetectProtocol() over SSH = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
+	}
+}
+
+func TestDetectProtocol_SSH_DowngradesKittyWindowID(t *testing.T) {
+	withEnv(t, "SSH_CLIENT", "192.168.1.1 12345 22")
+	clearEnv(t, "TERM_PROGRAM")
+	clearEnv(t, "TERM")
+	withEnv(t, "KITTY_WINDOW_ID", "42")
+
+	if got := DetectProtocol(); got != ProtocolUnicode {
+		t.Errorf("DetectProtocol() over SSH = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
+	}
+}
+
+func TestDetectProtocol_SSH_UnknownStaysUnicode(t *testing.T) {
+	withEnv(t, "SSH_CLIENT", "192.168.1.1 12345 22")
+	clearEnv(t, "TERM_PROGRAM")
+	clearEnv(t, "TERM")
+	clearEnv(t, "KITTY_WINDOW_ID")
+
+	if got := DetectProtocol(); got != ProtocolUnicode {
+		t.Errorf("DetectProtocol() over SSH = %d, want ProtocolUnicode (%d)", got, ProtocolUnicode)
 	}
 }
 
