@@ -50,10 +50,12 @@ func tuiComputeGrid(widgets []app.Widget, width, height int, visible []int, focu
 		}}
 	}
 
-	// 2-column grid layout.
+	// Adaptive column count based on terminal width.
 	cols := 2
-	if len(visible) == 1 {
+	if width < 80 {
 		cols = 1
+	} else if width >= 160 && len(visible) >= 4 {
+		cols = 3
 	}
 	colWidth := width / cols
 

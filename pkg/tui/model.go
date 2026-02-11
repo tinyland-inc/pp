@@ -48,6 +48,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Clamp focused index before handling keys.
+		if len(m.widgets) > 0 && m.focused >= len(m.widgets) {
+			m.focused = len(m.widgets) - 1
+		}
 		return tuiHandleKey(m, msg)
 	}
 
@@ -61,6 +65,11 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
+	// Guard: clamp focused index to widget bounds.
+	if len(m.widgets) > 0 && m.focused >= len(m.widgets) {
+		m.focused = len(m.widgets) - 1
+	}
+
 	// Determine which widgets are visible (search filtering).
 	visibleIndices := tuiVisibleIndices(m)
 
@@ -69,7 +78,7 @@ func (m Model) View() string {
 	if m.expanded >= 0 && m.expanded < len(m.widgets) {
 		// Render the expanded widget fullscreen (minus status bar row).
 		content = tuiRenderExpanded(m.widgets[m.expanded], m.width, m.height-1)
-	} else {
+	} else if len(m.widgets) > 0 {
 		// Compute grid layout for visible widgets.
 		cells := tuiComputeGrid(m.widgets, m.width, m.height, visibleIndices, m.focused)
 		content = tuiRenderGrid(cells, m.width, m.height-1)

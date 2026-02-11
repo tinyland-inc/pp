@@ -132,6 +132,12 @@ func main() {
 	}
 
 	if *shellType != "" {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "prompt-pulse: shell integration panic: %v\n", r)
+				os.Exit(1)
+			}
+		}()
 		var st shell.ShellType
 		switch *shellType {
 		case "bash":
@@ -324,6 +330,13 @@ func main() {
 	// ---------------------------------------------------------------
 
 	if *runBanner {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "prompt-pulse: banner panic: %v\n", r)
+				os.Exit(1)
+			}
+		}()
+
 		// Determine terminal dimensions.
 		width := *termWidth
 		height := *termHeight
@@ -364,6 +377,15 @@ func main() {
 	// ---------------------------------------------------------------
 
 	if *runTUI {
+		defer func() {
+			if r := recover(); r != nil {
+				// Attempt to restore terminal from alt-screen before printing error.
+				fmt.Print("\x1b[?1049l\x1b[?25h")
+				fmt.Fprintf(os.Stderr, "prompt-pulse: TUI panic: %v\n", r)
+				os.Exit(1)
+			}
+		}()
+
 		// Create the TUI model with no widgets for now.
 		// Widget wiring to v2 collectors will be done in a follow-up.
 		model := tui.New(nil)

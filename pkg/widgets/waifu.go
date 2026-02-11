@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -53,7 +54,7 @@ func NewWaifuWidget(sessionMgr *waifu.SessionManager, renderer ImageRenderer) *W
 	// missing or empty, we capture the error and display it later.
 	session, err := sessionMgr.GetOrCreate()
 	if err != nil {
-		w.err = err
+		w.err = fmt.Errorf("waifu init: %w (add images to cache dir)", err)
 		w.loading = false
 	} else {
 		w.session = session

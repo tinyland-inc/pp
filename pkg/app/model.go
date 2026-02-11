@@ -330,13 +330,20 @@ func (m AppModel) renderWidget(w Widget, rect layout.Rect, focused bool) string 
 	// Replace the first border line with one that includes the title.
 	lines := strings.SplitN(box, "\n", 2)
 	if len(lines) >= 1 && title != "" {
-		// Insert title into the top border.
 		topBorder := lines[0]
-		if len(topBorder) > 4 {
-			titleStr := " " + title + " "
-			// Replace characters after the corner in the top border.
-			lines[0] = string([]rune(topBorder)[:2]) + titleStr + string([]rune(topBorder)[2+len([]rune(titleStr)):])
+		topRunes := []rune(topBorder)
+		titleStr := " " + title + " "
+		titleRunes := []rune(titleStr)
+
+		if len(topRunes) >= 2+len(titleRunes) {
+			// Title fits: inject it after the corner character.
+			lines[0] = string(topRunes[:2]) + titleStr + string(topRunes[2+len(titleRunes):])
+		} else if len(topRunes) > 4 {
+			// Title too wide: truncate it to fit within the border.
+			maxTitle := len(topRunes) - 4
+			lines[0] = string(topRunes[:2]) + " " + string(titleRunes[1:maxTitle+1]) + " " + string(topRunes[len(topRunes)-1:])
 		}
+		// else: border too narrow for any title, leave as-is.
 	}
 
 	return strings.Join(lines, "\n")
