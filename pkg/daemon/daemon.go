@@ -53,10 +53,12 @@ func DefaultConfig() Config {
 	}
 }
 
-// defaultBasePath returns XDG_RUNTIME_DIR if set, otherwise /tmp/prompt-pulse-{uid}.
+// defaultBasePath returns a prompt-pulse subdirectory under XDG_RUNTIME_DIR
+// (if set), otherwise /tmp/prompt-pulse-{uid}. Using a subdirectory avoids
+// EROFS errors when systemd's ProtectSystem=strict makes the parent read-only.
 func defaultBasePath() string {
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return dir
+		return filepath.Join(dir, "prompt-pulse")
 	}
 	return fmt.Sprintf("/tmp/prompt-pulse-%d", os.Getuid())
 }

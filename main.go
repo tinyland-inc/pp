@@ -66,6 +66,8 @@ func main() {
 		showVersion    = flag.Bool("version", false, "Print version and exit")
 		termWidth      = flag.Int("term-width", 0, "Terminal width override (0 = auto-detect)")
 		termHeight     = flag.Int("term-height", 0, "Terminal height override (0 = auto-detect)")
+		waifuMode      = flag.Bool("waifu", false, "Enable waifu image in banner")
+		sessionID      = flag.String("session-id", "", "Session ID for per-session waifu caching")
 		showBanner     = flag.Bool("show-banner", false, "Show banner in shell integration")
 		daemonAutoStart = flag.Bool("daemon-autostart", false, "Auto-start daemon in shell integration")
 	)
@@ -224,7 +226,13 @@ func main() {
 		theme.SetCurrent(cfg.Theme.Name)
 	}
 
-	_ = *verbose // reserved for future structured logging
+	_ = *verbose   // reserved for future structured logging
+	_ = *sessionID // reserved for per-session waifu caching
+
+	// Apply CLI waifu override to config.
+	if *waifuMode {
+		cfg.Image.WaifuEnabled = true
+	}
 
 	// ---------------------------------------------------------------
 	// Health check
