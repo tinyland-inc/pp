@@ -350,18 +350,7 @@ func main() {
 		preset := banner.SelectPreset(width, height)
 
 		// Build widget data from cached collector data.
-		// For now, render an empty banner (collectors not wired yet).
-		data := banner.BannerData{
-			Widgets: []banner.WidgetData{
-				{
-					ID:      "status",
-					Title:   "System Status",
-					Content: fmt.Sprintf("prompt-pulse v%s (%s)", version, commit),
-					MinW:    30,
-					MinH:    3,
-				},
-			},
-		}
+		data := buildBannerFromCache(cfg.General.CacheDir, version, commit)
 
 		result, err := banner.RenderCached(cfg.General.CacheDir, data, preset)
 		if err != nil {
