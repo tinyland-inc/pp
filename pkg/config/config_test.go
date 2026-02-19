@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -695,6 +696,85 @@ func TestLoadFromFile_TestdataMinimal(t *testing.T) {
 	// Defaults preserved
 	if cfg.General.DaemonPollInterval.Duration != 15*time.Minute {
 		t.Errorf("DaemonPollInterval = %v, want 15m (default)", cfg.General.DaemonPollInterval)
+	}
+}
+
+func TestReadEnvFile(t *testing.T) {
+	// Create a temp file with a secret value and trailing newline.
+	f, err := os.CreateTemp("", "ppulse-secret-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString("my-secret-key\n")
+	f.Close()
+
+	t.Setenv("TEST_SECRET_FILE", f.Name())
+	got := readEnvFile("TEST_SECRET_FILE")
+	if got != "my-secret-key" {
+		t.Errorf("readEnvFile() = %q, want %q", got, "my-secret-key")
+	}
+}
+
+func TestReadEnvFile_Missing(t *testing.T) {
+	t.Setenv("TEST_MISSING_FILE", "/nonexistent/path/secret")
+	got := readEnvFile("TEST_MISSING_FILE")
+	if got != "" {
+		t.Errorf("readEnvFile() = %q, want empty string for missing file", got)
+	}
+}
+
+func TestReadEnvFile_Unset(t *testing.T) {
+	got := readEnvFile("DEFINITELY_NOT_SET_12345")
+	if got != "" {
+		t.Errorf("readEnvFile() = %q, want empty string for unset env var", got)
+	}
+}
+
+func TestApplyEnvOverrides_FileVars(t *testing.T) {
+	// Create temp files for each secret.
+	tmpAnthro, _ := os.CreateTemp("", "anthro-*")
+	tmpAnthro.WriteString("admin-key-from-file\n")
+	tmpAnthro.Close()
+	defer os.Remove(tmpAnthro.Name())
+
+	tmpCivo, _ := os.CreateTemp("", "civo-*")
+	tmpCivo.WriteString("civo-key-from-file\n")
+	tmpCivo.Close()
+	defer os.Remove(tmpCivo.Name())
+
+	// Clear direct env vars to ensure _FILE variants are used.
+	t.Setenv("ANTHROPIC_ADMIN_KEY", "")
+	t.Setenv("CIVO_TOKEN", "")
+	t.Setenv("ANTHROPIC_ADMIN_KEY_FILE", tmpAnthro.Name())
+	t.Setenv("CIVO_API_KEY_FILE", tmpCivo.Name())
+
+	cfg := DefaultConfig()
+	applyEnvOverrides(cfg)
+
+	if cfg.Collectors.Claude.AdminKey != "admin-key-from-file" {
+		t.Errorf("Claude.AdminKey = %q, want %q", cfg.Collectors.Claude.AdminKey, "admin-key-from-file")
+	}
+	if cfg.Collectors.Billing.Civo.APIKey != "civo-key-from-file" {
+		t.Errorf("Billing.Civo.APIKey = %q, want %q", cfg.Collectors.Billing.Civo.APIKey, "civo-key-from-file")
+	}
+}
+
+func TestApplyEnvOverrides_DirectTakesPrecedence(t *testing.T) {
+	// Direct env var should take precedence over _FILE variant.
+	tmpAnthro, _ := os.CreateTemp("", "anthro-*")
+	tmpAnthro.WriteString("from-file\n")
+	tmpAnthro.Close()
+	defer os.Remove(tmpAnthro.Name())
+
+	t.Setenv("ANTHROPIC_ADMIN_KEY", "from-env-direct")
+	t.Setenv("ANTHROPIC_ADMIN_KEY_FILE", tmpAnthro.Name())
+
+	cfg := DefaultConfig()
+	applyEnvOverrides(cfg)
+
+	if cfg.Collectors.Claude.AdminKey != "from-env-direct" {
+		t.Errorf("Claude.AdminKey = %q, want %q (direct should take precedence)", cfg.Collectors.Claude.AdminKey, "from-env-direct")
 	}
 }
 

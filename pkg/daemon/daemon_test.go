@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 )
 
 // shortSockDir creates a short temporary directory suitable for Unix socket
@@ -1088,5 +1090,54 @@ func TestComputeHash(t *testing.T) {
 	}
 	if len(h1) != 64 {
 		t.Errorf("SHA-256 hex hash should be 64 chars, got %d", len(h1))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BuildRegistry tests
+// ---------------------------------------------------------------------------
+
+func TestBuildRegistry_AllEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Collectors.SysMetrics.Enabled = true
+	cfg.Collectors.Tailscale.Enabled = true
+	cfg.Collectors.Kubernetes.Enabled = true
+	cfg.Collectors.Claude.Enabled = true
+	cfg.Collectors.Billing.Enabled = true
+
+	reg := BuildRegistry(cfg)
+	names := reg.List()
+	if len(names) != 5 {
+		t.Errorf("BuildRegistry(all enabled) registered %d collectors, want 5: %v", len(names), names)
+	}
+}
+
+func TestBuildRegistry_DisabledCollectors(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Collectors.SysMetrics.Enabled = true
+	cfg.Collectors.Tailscale.Enabled = false
+	cfg.Collectors.Kubernetes.Enabled = false
+	cfg.Collectors.Claude.Enabled = false
+	cfg.Collectors.Billing.Enabled = false
+
+	reg := BuildRegistry(cfg)
+	names := reg.List()
+	if len(names) != 1 {
+		t.Errorf("BuildRegistry(only sysmetrics) registered %d collectors, want 1: %v", len(names), names)
+	}
+}
+
+func TestBuildRegistry_NoneEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Collectors.SysMetrics.Enabled = false
+	cfg.Collectors.Tailscale.Enabled = false
+	cfg.Collectors.Kubernetes.Enabled = false
+	cfg.Collectors.Claude.Enabled = false
+	cfg.Collectors.Billing.Enabled = false
+
+	reg := BuildRegistry(cfg)
+	names := reg.List()
+	if len(names) != 0 {
+		t.Errorf("BuildRegistry(none enabled) registered %d collectors, want 0: %v", len(names), names)
 	}
 }

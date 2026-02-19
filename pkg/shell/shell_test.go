@@ -175,7 +175,7 @@ func TestKsh_ContainsTrapKEYBD(t *testing.T) {
 
 func TestKsh_BannerInlineSubstitution(t *testing.T) {
 	out := Generate(Ksh, Options{ShowBanner: true})
-	if !strings.Contains(out, "prompt-pulse banner --inline 2>/dev/null") {
+	if !strings.Contains(out, "prompt-pulse -banner --inline 2>/dev/null") {
 		t.Error("Ksh banner should use inline command substitution in PS1")
 	}
 }
@@ -318,32 +318,32 @@ func TestShowBannerFalse_Ksh(t *testing.T) {
 
 func TestDaemonAutoStart_Bash(t *testing.T) {
 	out := Generate(Bash, Options{DaemonAutoStart: true})
-	if !strings.Contains(out, "daemon start") {
-		t.Error("Bash with DaemonAutoStart should contain daemon start")
+	if !strings.Contains(out, "-daemon") {
+		t.Error("Bash with DaemonAutoStart should contain -daemon flag")
 	}
-	if !strings.Contains(out, "daemon status") {
-		t.Error("Bash with DaemonAutoStart should check daemon status")
+	if !strings.Contains(out, "-health") {
+		t.Error("Bash with DaemonAutoStart should check health status")
 	}
 }
 
 func TestDaemonAutoStart_Zsh(t *testing.T) {
 	out := Generate(Zsh, Options{DaemonAutoStart: true})
-	if !strings.Contains(out, "daemon start") {
-		t.Error("Zsh with DaemonAutoStart should contain daemon start")
+	if !strings.Contains(out, "-daemon") {
+		t.Error("Zsh with DaemonAutoStart should contain -daemon flag")
 	}
 }
 
 func TestDaemonAutoStart_Fish(t *testing.T) {
 	out := Generate(Fish, Options{DaemonAutoStart: true})
-	if !strings.Contains(out, "daemon start") {
-		t.Error("Fish with DaemonAutoStart should contain daemon start")
+	if !strings.Contains(out, "-daemon") {
+		t.Error("Fish with DaemonAutoStart should contain -daemon flag")
 	}
 }
 
 func TestDaemonAutoStart_Ksh(t *testing.T) {
 	out := Generate(Ksh, Options{DaemonAutoStart: true})
-	if !strings.Contains(out, "daemon start") {
-		t.Error("Ksh with DaemonAutoStart should contain daemon start")
+	if !strings.Contains(out, "-daemon") {
+		t.Error("Ksh with DaemonAutoStart should contain -daemon flag")
 	}
 }
 

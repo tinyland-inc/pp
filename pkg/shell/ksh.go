@@ -25,11 +25,11 @@ func shKshBanner(opts Options) string {
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Display banner on shell startup
 if [ "${PROMPT_PULSE_BANNER:-1}" != "0" ]; then
-    %s banner 2>/dev/null
+    %s -banner 2>/dev/null
 fi
 
 # Inline banner via PS1 command substitution
-PS1='$(prompt-pulse banner --inline 2>/dev/null)'"${PS1}"
+PS1='$(prompt-pulse -banner --inline 2>/dev/null)'"${PS1}"
 
 `, bin)
 }
@@ -40,7 +40,7 @@ func shKshKeybinding(opts Options) string {
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Launch TUI via KEYBD trap (%s)
 __prompt_pulse_tui() {
-    %s tui </dev/tty
+    %s -tui </dev/tty
 }
 trap '__prompt_pulse_keybd_handler' KEYBD
 __prompt_pulse_keybd_handler() {
@@ -76,19 +76,20 @@ func shKshDaemonFunctions(opts Options) string {
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Daemon management functions
 pp-start() {
-    %[1]s daemon start
+    %[1]s -daemon &
+    echo "prompt-pulse daemon started (PID $!)"
 }
 
 pp-stop() {
-    %[1]s daemon stop
+    pkill -f '%[1]s -daemon' 2>/dev/null && echo "prompt-pulse daemon stopped" || echo "daemon not running"
 }
 
 pp-status() {
-    %[1]s daemon status
+    %[1]s -health
 }
 
 pp-banner() {
-    %[1]s banner
+    %[1]s -banner
 }
 
 `, bin)
@@ -101,8 +102,8 @@ func shKshDaemonAutoStart(opts Options) string {
 	}
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Auto-start daemon if not running
-if ! %s daemon status >/dev/null 2>&1; then
-    %s daemon start >/dev/null 2>&1 &
+if ! %s -health >/dev/null 2>&1; then
+    %s -daemon >/dev/null 2>&1 &
 fi
 
 `, bin, bin)

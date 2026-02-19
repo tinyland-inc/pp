@@ -26,7 +26,7 @@ func shFishBanner(opts Options) string {
 	return fmt.Sprintf(`# Display banner on shell startup via fish_prompt event
 function __prompt_pulse_banner --on-event fish_prompt
     if test "$PROMPT_PULSE_BANNER" != "0"
-        %s banner 2>/dev/null
+        %s -banner 2>/dev/null
     end
     # Only show banner once per session; remove handler after first call
     functions -e __prompt_pulse_banner
@@ -44,7 +44,7 @@ func shFishKeybinding(opts Options) string {
 	return fmt.Sprintf(`# Launch TUI with keybinding (%s)
 function __prompt_pulse_tui
     commandline -f repaint
-    %s tui </dev/tty >/dev/tty 2>/dev/tty
+    %s -tui </dev/tty >/dev/tty 2>/dev/tty
     commandline -f repaint
 end
 bind %s __prompt_pulse_tui
@@ -59,12 +59,13 @@ func shFishCompletions(opts Options) string {
 	if !opts.EnableCompletions {
 		return ""
 	}
-	return `# Tab completions
-complete -c prompt-pulse -n __fish_use_subcommand -a banner -d "Display system status banner"
-complete -c prompt-pulse -n __fish_use_subcommand -a tui -d "Launch interactive TUI dashboard"
-complete -c prompt-pulse -n __fish_use_subcommand -a daemon -d "Manage background daemon"
-complete -c prompt-pulse -n __fish_use_subcommand -a shell -d "Generate shell integration"
-complete -c prompt-pulse -n __fish_use_subcommand -a version -d "Show version information"
+	return `# Tab completions (flag-based CLI)
+complete -c prompt-pulse -l banner -d "Display system status banner"
+complete -c prompt-pulse -l tui -d "Launch interactive TUI dashboard"
+complete -c prompt-pulse -l daemon -d "Run background daemon"
+complete -c prompt-pulse -l shell -r -d "Generate shell integration (bash|zsh|fish|ksh)"
+complete -c prompt-pulse -l version -d "Show version information"
+complete -c prompt-pulse -l health -d "Check daemon health status"
 
 `
 }
@@ -75,19 +76,21 @@ func shFishDaemonFunctions(opts Options) string {
 	bin := shFishQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Daemon management functions
 function pp-start -d "Start prompt-pulse daemon"
-    %[1]s daemon start
+    %[1]s -daemon &
+    disown
+    echo "prompt-pulse daemon started"
 end
 
 function pp-stop -d "Stop prompt-pulse daemon"
-    %[1]s daemon stop
+    pkill -f '%[1]s -daemon' 2>/dev/null; and echo "prompt-pulse daemon stopped"; or echo "daemon not running"
 end
 
 function pp-status -d "Show prompt-pulse daemon status"
-    %[1]s daemon status
+    %[1]s -health
 end
 
 function pp-banner -d "Display prompt-pulse banner"
-    %[1]s banner
+    %[1]s -banner
 end
 
 `, bin)
@@ -100,8 +103,8 @@ func shFishDaemonAutoStart(opts Options) string {
 	}
 	bin := shFishQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Auto-start daemon if not running
-if not %s daemon status >/dev/null 2>&1
-    %s daemon start >/dev/null 2>&1 &
+if not %s -health >/dev/null 2>&1
+    %s -daemon >/dev/null 2>&1 &
     disown
 end
 

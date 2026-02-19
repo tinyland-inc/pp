@@ -413,6 +413,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "daemon init failed: %v\n", err)
 			os.Exit(1)
 		}
+		d.SetAppConfig(cfg)
 
 		fmt.Fprintf(os.Stderr, "starting prompt-pulse daemon v%s\n", version)
 		if err := d.Start(ctx); err != nil && err != context.Canceled {

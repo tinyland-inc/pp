@@ -111,14 +111,21 @@ func DefaultConfig() *Config {
 }
 
 // applyEnvOverrides checks environment variables and overrides config values.
+// Direct env vars take precedence over _FILE variants (sops-nix pattern).
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("ANTHROPIC_ADMIN_KEY"); v != "" {
+		cfg.Collectors.Claude.AdminKey = v
+	} else if v := readEnvFile("ANTHROPIC_ADMIN_KEY_FILE"); v != "" {
 		cfg.Collectors.Claude.AdminKey = v
 	}
 	if v := os.Getenv("CIVO_TOKEN"); v != "" {
 		cfg.Collectors.Billing.Civo.APIKey = v
+	} else if v := readEnvFile("CIVO_API_KEY_FILE"); v != "" {
+		cfg.Collectors.Billing.Civo.APIKey = v
 	}
 	if v := os.Getenv("DIGITALOCEAN_TOKEN"); v != "" {
+		cfg.Collectors.Billing.DigitalOcean.APIKey = v
+	} else if v := readEnvFile("DIGITALOCEAN_TOKEN_FILE"); v != "" {
 		cfg.Collectors.Billing.DigitalOcean.APIKey = v
 	}
 	if v := os.Getenv("PPULSE_PROTOCOL"); v != "" {
@@ -130,6 +137,27 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("PPULSE_LAYOUT"); v != "" {
 		cfg.Layout.Preset = v
 	}
+}
+
+// readEnvFile reads the content of a file whose path is given by an
+// environment variable. This supports the sops-nix pattern where secrets
+// are decrypted to files and their paths exported as *_FILE env vars.
+// Returns empty string if the env var is unset or the file can't be read.
+func readEnvFile(envVar string) string {
+	path := os.Getenv(envVar)
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// Trim trailing newline (common in secret files).
+	s := string(data)
+	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // configSearchPaths returns the ordered list of config file paths to try.

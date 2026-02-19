@@ -7,11 +7,15 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
+
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 )
 
 // Config holds all configuration for the daemon process.
@@ -78,6 +82,7 @@ type CollectorHealth struct {
 // health reporting, and IPC.
 type Daemon struct {
 	cfg       Config
+	appCfg    *config.Config
 	startedAt time.Time
 	running   bool
 	ipc       *IPCServer
@@ -87,6 +92,12 @@ type Daemon struct {
 	collectors map[string]*CollectorHealth
 
 	mu sync.Mutex
+}
+
+// SetAppConfig sets the application configuration used to build and start
+// data collectors when the daemon starts. Must be called before Start().
+func (d *Daemon) SetAppConfig(cfg *config.Config) {
+	d.appCfg = cfg
 }
 
 // New validates the configuration and returns a Daemon ready to be started.
@@ -156,6 +167,29 @@ func (d *Daemon) Start(ctx context.Context) error {
 		_ = err
 	}
 
+	// Start collectors if app config is available.
+	var runner *collectors.Runner
+	if d.appCfg != nil {
+		reg := BuildRegistry(d.appCfg)
+		names := reg.List()
+		if len(names) > 0 {
+			log.Printf("daemon: starting %d collectors: %v", len(names), names)
+			updates := make(chan collectors.Update, collectors.DefaultUpdateBufferSize)
+			runner = collectors.NewRunner(reg, updates)
+			if err := runner.Start(ctx); err != nil {
+				log.Printf("daemon: start collectors: %v", err)
+			} else {
+				cacheDir := d.appCfg.General.CacheDir
+				if cacheDir == "" {
+					cacheDir = d.cfg.DataDir
+				}
+				go ConsumeUpdates(ctx, updates, cacheDir, d)
+			}
+		} else {
+			log.Printf("daemon: no collectors enabled")
+		}
+	}
+
 	// Main loop: write health periodically until context is cancelled.
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -163,6 +197,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if runner != nil {
+				runner.Stop()
+			}
 			return d.Stop()
 		case <-ticker.C:
 			_ = d.WriteHealth()

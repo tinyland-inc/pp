@@ -18,16 +18,24 @@ const (
 	DefaultStopTimeout = 5 * time.Second
 )
 
+// errTracker deduplicates repeated identical errors per collector.
+type errTracker struct {
+	lastMsg    string
+	lastTime   time.Time
+	suppressed int64
+}
+
 // Runner starts and stops collector goroutines. Each registered collector
 // runs in its own goroutine with an independent ticker. Results fan in to a
 // single updates channel.
 type Runner struct {
-	registry *Registry
-	updates  chan<- Update
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	stopped  chan struct{}
-	once     sync.Once
+	registry    *Registry
+	updates     chan<- Update
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	stopped     chan struct{}
+	once        sync.Once
+	errTrackers map[string]*errTracker
 }
 
 // NewRunner creates a runner that sends collection results to the provided
@@ -35,9 +43,10 @@ type Runner struct {
 // the channel.
 func NewRunner(registry *Registry, updates chan<- Update) *Runner {
 	return &Runner{
-		registry: registry,
-		updates:  updates,
-		stopped:  make(chan struct{}),
+		registry:    registry,
+		updates:     updates,
+		stopped:     make(chan struct{}),
+		errTrackers: make(map[string]*errTracker),
 	}
 }
 
@@ -186,7 +195,7 @@ func (r *Runner) collectAndSend(ctx context.Context, c Collector) {
 	})
 
 	if err != nil {
-		log.Printf("collectors: %s error: %v", name, err)
+		r.logCollectorError(name, err)
 	}
 
 	update := Update{
@@ -203,4 +212,32 @@ func (r *Runner) collectAndSend(ctx context.Context, c Collector) {
 	default:
 		log.Printf("collectors: update channel full, dropping update from %s", name)
 	}
+}
+
+// logCollectorError deduplicates repeated identical errors from the same
+// collector. If the same error message recurs within 1 hour, it is suppressed
+// with a summary logged every 100 suppressions. This prevents multi-MB log
+// files from repeated connection/auth failures.
+func (r *Runner) logCollectorError(name string, err error) {
+	msg := err.Error()
+	tracker := r.errTrackers[name]
+	if tracker == nil {
+		tracker = &errTracker{}
+		r.errTrackers[name] = tracker
+	}
+	now := time.Now()
+	if msg == tracker.lastMsg && now.Sub(tracker.lastTime) < time.Hour {
+		tracker.suppressed++
+		if tracker.suppressed%100 == 0 {
+			log.Printf("collectors: %s error (repeated %d times): %v", name, tracker.suppressed, err)
+		}
+		return
+	}
+	if tracker.suppressed > 0 {
+		log.Printf("collectors: %s previous error repeated %d times", name, tracker.suppressed)
+	}
+	log.Printf("collectors: %s error: %v", name, err)
+	tracker.lastMsg = msg
+	tracker.lastTime = now
+	tracker.suppressed = 0
 }

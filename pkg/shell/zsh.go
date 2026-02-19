@@ -24,7 +24,7 @@ func shZshBanner(opts Options) string {
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Display banner on shell startup
 if [[ "${PROMPT_PULSE_BANNER:-1}" != "0" ]]; then
-    %s banner 2>/dev/null
+    %s -banner 2>/dev/null
 fi
 
 # Refresh hook via add-zsh-hook
@@ -45,7 +45,7 @@ func shZshKeybinding(opts Options) string {
 __prompt_pulse_tui_widget() {
     BUFFER=""
     zle reset-prompt
-    %s tui </dev/tty >/dev/tty 2>/dev/tty
+    %s -tui </dev/tty >/dev/tty 2>/dev/tty
     zle reset-prompt
 }
 zle -N prompt-pulse-tui __prompt_pulse_tui_widget
@@ -82,19 +82,20 @@ func shZshDaemonFunctions(opts Options) string {
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Daemon management functions
 pp-start() {
-    %[1]s daemon start
+    %[1]s -daemon &!
+    echo "prompt-pulse daemon started (PID $!)"
 }
 
 pp-stop() {
-    %[1]s daemon stop
+    pkill -f '%[1]s -daemon' 2>/dev/null && echo "prompt-pulse daemon stopped" || echo "daemon not running"
 }
 
 pp-status() {
-    %[1]s daemon status
+    %[1]s -health
 }
 
 pp-banner() {
-    %[1]s banner
+    %[1]s -banner
 }
 
 `, bin)
@@ -107,8 +108,8 @@ func shZshDaemonAutoStart(opts Options) string {
 	}
 	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Auto-start daemon if not running
-if ! %s daemon status >/dev/null 2>&1; then
-    %s daemon start >/dev/null 2>&1 &!
+if ! %s -health >/dev/null 2>&1; then
+    %s -daemon >/dev/null 2>&1 &!
 fi
 
 `, bin, bin)
