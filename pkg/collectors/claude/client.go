@@ -26,6 +26,20 @@ type APIClient interface {
 	// GetUsage retrieves token usage for the given organization and date range.
 	// startDate and endDate are in YYYY-MM-DD format (inclusive).
 	GetUsage(ctx context.Context, orgID, apiKey, startDate, endDate string) (*APIUsageResponse, error)
+
+	// GetOrganizations lists organizations accessible by the given admin key.
+	GetOrganizations(ctx context.Context, apiKey string) ([]Organization, error)
+}
+
+// Organization represents an Anthropic organization.
+type Organization struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// OrganizationsResponse represents the list organizations API response.
+type OrganizationsResponse struct {
+	Data []Organization `json:"data"`
 }
 
 // APIUsageResponse represents the JSON response from the Anthropic usage API.
@@ -97,4 +111,36 @@ func (c *HTTPClient) GetUsage(ctx context.Context, orgID, apiKey, startDate, end
 	}
 
 	return &result, nil
+}
+
+// GetOrganizations calls the Anthropic Admin API to list organizations.
+func (c *HTTPClient) GetOrganizations(ctx context.Context, apiKey string) ([]Organization, error) {
+	url := fmt.Sprintf("%s/v1/organizations", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", anthropicVersion)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result OrganizationsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Data, nil
 }

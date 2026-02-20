@@ -63,8 +63,9 @@ func BuildRegistry(cfg *config.Config) *collectors.Registry {
 		}
 		for _, a := range cfg.Collectors.Claude.Accounts {
 			accounts = append(accounts, claude.AccountConfig{
-				Name:        a.Name,
-				AdminAPIKey: a.AdminKey,
+				Name:           a.Name,
+				AdminAPIKey:    a.AdminKey,
+				OrganizationID: a.OrganizationID,
 			})
 		}
 		c := claude.New(

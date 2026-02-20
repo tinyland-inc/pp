@@ -204,9 +204,9 @@ func TestCollect_CivoOnly(t *testing.T) {
 		t.Errorf("Provider.Error = %q, want empty", prov.Error)
 	}
 
-	// Charges: 25.50 + 10.00 = 35.50
-	if !floatEqual(prov.MonthToDate, 35.50) {
-		t.Errorf("MonthToDate = %f, want 35.50", prov.MonthToDate)
+	// MonthToDate = k8s (20+15) + instances (10) = 45.00
+	if !floatEqual(prov.MonthToDate, 45.00) {
+		t.Errorf("MonthToDate = %f, want 45.00", prov.MonthToDate)
 	}
 
 	// 2 k8s clusters + 1 instance = 3 resources
@@ -234,8 +234,8 @@ func TestCollect_CivoOnly(t *testing.T) {
 	}
 
 	// TotalMonthlyUSD should equal Civo month-to-date.
-	if !floatEqual(report.TotalMonthlyUSD, 35.50) {
-		t.Errorf("TotalMonthlyUSD = %f, want 35.50", report.TotalMonthlyUSD)
+	if !floatEqual(report.TotalMonthlyUSD, 45.00) {
+		t.Errorf("TotalMonthlyUSD = %f, want 45.00", report.TotalMonthlyUSD)
 	}
 }
 
@@ -321,8 +321,8 @@ func TestCollect_BothProviders(t *testing.T) {
 		t.Fatalf("Providers len = %d, want 2", len(report.Providers))
 	}
 
-	// Total = Civo (35.50) + DO (45.67) = 81.17
-	expectedTotal := 35.50 + 45.67
+	// Total = Civo (45.00) + DO (45.67) = 90.67
+	expectedTotal := 45.00 + 45.67
 	if !floatEqual(report.TotalMonthlyUSD, expectedTotal) {
 		t.Errorf("TotalMonthlyUSD = %f, want %f", report.TotalMonthlyUSD, expectedTotal)
 	}
@@ -330,7 +330,7 @@ func TestCollect_BothProviders(t *testing.T) {
 
 func TestCollect_CivoError_DOStillWorks(t *testing.T) {
 	civo := &mockCivoClient{
-		chargesErr: errors.New("civo API unavailable"),
+		k8sErr: errors.New("civo API unavailable"),
 	}
 	do := buildDOMock()
 
@@ -427,9 +427,9 @@ func TestCollect_DOError_CivoStillWorks(t *testing.T) {
 		t.Error("digitalocean.Error should not be empty")
 	}
 
-	// TotalMonthlyUSD should only include Civo.
-	if !floatEqual(report.TotalMonthlyUSD, 35.50) {
-		t.Errorf("TotalMonthlyUSD = %f, want 35.50 (Civo only)", report.TotalMonthlyUSD)
+	// TotalMonthlyUSD should only include Civo (k8s 20+15 + instance 10).
+	if !floatEqual(report.TotalMonthlyUSD, 45.00) {
+		t.Errorf("TotalMonthlyUSD = %f, want 45.00 (Civo only)", report.TotalMonthlyUSD)
 	}
 
 	if !c.Healthy() {
@@ -456,8 +456,8 @@ func TestCollect_BudgetPercentage(t *testing.T) {
 		t.Errorf("BudgetUSD = %f, want 100.00", report.BudgetUSD)
 	}
 
-	// Civo month-to-date = 35.50, budget = 100 => 35.5%
-	expectedPercent := 35.50
+	// Civo month-to-date = 45.00, budget = 100 => 45.0%
+	expectedPercent := 45.00
 	if !floatEqual(report.BudgetPercent, expectedPercent) {
 		t.Errorf("BudgetPercent = %f, want %f", report.BudgetPercent, expectedPercent)
 	}
@@ -552,7 +552,7 @@ func TestHealthy_AfterSuccess(t *testing.T) {
 }
 
 func TestHealthy_AfterAllProvidersFail(t *testing.T) {
-	civo := &mockCivoClient{chargesErr: errors.New("fail")}
+	civo := &mockCivoClient{k8sErr: errors.New("fail")}
 	do := &mockDOClient{balanceErr: errors.New("fail")}
 
 	c := newWithClients(Config{
@@ -571,7 +571,7 @@ func TestHealthy_AfterAllProvidersFail(t *testing.T) {
 }
 
 func TestHealthy_RecoverAfterFailure(t *testing.T) {
-	civo := &mockCivoClient{chargesErr: errors.New("temporary")}
+	civo := &mockCivoClient{k8sErr: errors.New("temporary")}
 	c := newWithClients(Config{
 		Civo: &CivoConfig{APIKey: "key"},
 	}, civo, nil)
@@ -583,8 +583,7 @@ func TestHealthy_RecoverAfterFailure(t *testing.T) {
 	}
 
 	// Fix the mock.
-	civo.chargesErr = nil
-	civo.charges = &CivoChargesResponse{}
+	civo.k8sErr = nil
 	civo.k8s = &CivoK8sResponse{}
 	civo.instances = &CivoInstancesResponse{}
 
@@ -674,9 +673,6 @@ func TestCollect_Timestamp(t *testing.T) {
 
 func TestCollect_CivoK8sError_PartialFailure(t *testing.T) {
 	civo := &mockCivoClient{
-		charges: &CivoChargesResponse{Items: []CivoCharge{
-			{TotalCost: 10.00},
-		}},
 		k8sErr: errors.New("k8s endpoint down"),
 	}
 

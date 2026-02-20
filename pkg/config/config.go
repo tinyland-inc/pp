@@ -121,6 +121,10 @@ type ClaudeAccountConfig struct {
 	// AdminKey is the per-account admin key.
 	// Prefer setting via environment variable instead of config file.
 	AdminKey string `toml:"admin_key"`
+
+	// OrganizationID is the Anthropic organization identifier.
+	// If empty, auto-discovered via GET /v1/organizations.
+	OrganizationID string `toml:"organization_id"`
 }
 
 // BillingCollectorConfig controls billing data collection.

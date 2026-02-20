@@ -42,6 +42,10 @@ func (m *mockAPIClient) setError(orgID, startDate, endDate string, err error) {
 	m.errs[key] = err
 }
 
+func (m *mockAPIClient) GetOrganizations(ctx context.Context, apiKey string) ([]Organization, error) {
+	return nil, errors.New("mock: not configured")
+}
+
 func (m *mockAPIClient) GetUsage(ctx context.Context, orgID, apiKey, startDate, endDate string) (*APIUsageResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

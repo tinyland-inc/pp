@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -113,10 +114,30 @@ func DefaultConfig() *Config {
 // applyEnvOverrides checks environment variables and overrides config values.
 // Direct env vars take precedence over _FILE variants (sops-nix pattern).
 func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("ANTHROPIC_ADMIN_KEY"); v != "" {
-		cfg.Collectors.Claude.AdminKey = v
-	} else if v := readEnvFile("ANTHROPIC_ADMIN_KEY_FILE"); v != "" {
-		cfg.Collectors.Claude.AdminKey = v
+	// Multi-account: ANTHROPIC_ADMIN_KEYS_FILE contains "name:key" lines.
+	if v := readEnvFile("ANTHROPIC_ADMIN_KEYS_FILE"); v != "" {
+		for _, line := range strings.Split(v, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			name, key, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			cfg.Collectors.Claude.Accounts = append(cfg.Collectors.Claude.Accounts, ClaudeAccountConfig{
+				Name:     strings.TrimSpace(name),
+				AdminKey: strings.TrimSpace(key),
+			})
+		}
+	}
+	// Single-account fallback: ANTHROPIC_ADMIN_KEY or _FILE.
+	if len(cfg.Collectors.Claude.Accounts) == 0 {
+		if v := os.Getenv("ANTHROPIC_ADMIN_KEY"); v != "" {
+			cfg.Collectors.Claude.AdminKey = v
+		} else if v := readEnvFile("ANTHROPIC_ADMIN_KEY_FILE"); v != "" {
+			cfg.Collectors.Claude.AdminKey = v
+		}
 	}
 	if v := os.Getenv("CIVO_TOKEN"); v != "" {
 		cfg.Collectors.Billing.Civo.APIKey = v

@@ -236,19 +236,6 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 		Resources: []ResourceCost{},
 	}
 
-	// Fetch charges for month-to-date spend.
-	charges, err := c.civoClient.GetCharges(ctx)
-	if err != nil {
-		pb.Error = err.Error()
-		return pb
-	}
-
-	if charges != nil {
-		for _, charge := range charges.Items {
-			pb.MonthToDate += charge.TotalCost
-		}
-	}
-
 	// Fetch Kubernetes clusters.
 	k8s, err := c.civoClient.GetKubernetes(ctx)
 	if err != nil {
@@ -263,6 +250,7 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 				Type:        "kubernetes",
 				MonthlyCost: cluster.MonthlyCost,
 			})
+			pb.MonthToDate += cluster.MonthlyCost
 		}
 	}
 
@@ -280,6 +268,7 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 				Type:        "instance",
 				MonthlyCost: inst.MonthlyCost,
 			})
+			pb.MonthToDate += inst.MonthlyCost
 		}
 	}
 

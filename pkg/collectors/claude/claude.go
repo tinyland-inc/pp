@@ -146,6 +146,9 @@ func (c *Collector) Collect(ctx context.Context) (interface{}, error) {
 		return nil, fmt.Errorf("claude collect: %w", err)
 	}
 
+	// Auto-discover org IDs for accounts that don't have one set.
+	c.resolveOrgIDs(ctx)
+
 	now := c.nowFunc()
 	curStart, curEnd := currentMonthRange(now)
 	prevStart, prevEnd := previousMonthRange(now)
@@ -173,6 +176,25 @@ func (c *Collector) Collect(ctx context.Context) (interface{}, error) {
 
 	c.setHealthy(anyConnected || len(c.accounts) == 0)
 	return report, nil
+}
+
+// resolveOrgIDs auto-discovers organization IDs for accounts missing them.
+func (c *Collector) resolveOrgIDs(ctx context.Context) {
+	for i := range c.accounts {
+		if c.accounts[i].OrganizationID != "" || c.accounts[i].AdminAPIKey == "" {
+			continue
+		}
+		orgs, err := c.client.GetOrganizations(ctx, c.accounts[i].AdminAPIKey)
+		if err != nil {
+			continue
+		}
+		if len(orgs) > 0 {
+			c.accounts[i].OrganizationID = orgs[0].ID
+			if c.accounts[i].Name == "default" && orgs[0].Name != "" {
+				c.accounts[i].Name = orgs[0].Name
+			}
+		}
+	}
 }
 
 // collectAccount fetches usage for a single account, returning an

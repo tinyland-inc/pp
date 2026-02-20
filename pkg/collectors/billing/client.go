@@ -112,11 +112,12 @@ func (c *civoHTTPClient) doRequest(ctx context.Context, path string, out interfa
 }
 
 func (c *civoHTTPClient) GetCharges(ctx context.Context) (*CivoChargesResponse, error) {
-	var resp CivoChargesResponse
-	if err := c.doRequest(ctx, "/charges", &resp); err != nil {
+	// CIVO /v2/charges returns a raw JSON array, not {items: [...]}.
+	var charges []CivoCharge
+	if err := c.doRequest(ctx, "/charges", &charges); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	return &CivoChargesResponse{Items: charges}, nil
 }
 
 func (c *civoHTTPClient) GetKubernetes(ctx context.Context) (*CivoK8sResponse, error) {
@@ -266,7 +267,7 @@ func (c *doHTTPClient) doRequest(ctx context.Context, path string, out interface
 
 func (c *doHTTPClient) GetBalance(ctx context.Context) (*DOBalanceResponse, error) {
 	var resp DOBalanceResponse
-	if err := c.doRequest(ctx, "/customers/balance", &resp); err != nil {
+	if err := c.doRequest(ctx, "/customers/my/balance", &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
