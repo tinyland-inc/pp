@@ -45,6 +45,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		// Forward resize to all widgets so they can invalidate caches.
+		for _, w := range m.widgets {
+			w.Update(msg)
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -53,8 +57,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focused = len(m.widgets) - 1
 		}
 		return tuiHandleKey(m, msg)
+
+	case app.DataUpdateEvent:
+		// Forward data updates to all widgets so they can react to new data.
+		var cmds []tea.Cmd
+		for _, w := range m.widgets {
+			if cmd := w.Update(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if len(cmds) > 0 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
 	}
 
+	// Forward any other messages to all widgets.
+	var cmds []tea.Cmd
+	for _, w := range m.widgets {
+		if cmd := w.Update(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) > 0 {
+		return m, tea.Batch(cmds...)
+	}
 	return m, nil
 }
 

@@ -37,10 +37,11 @@ PS1='$(prompt-pulse -banner --inline 2>/dev/null)'"${PS1}"
 // shKshKeybinding generates the keybinding block for Ksh93 using the KEYBD
 // trap.
 func shKshKeybinding(opts Options) string {
-	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Launch TUI via KEYBD trap (%s)
 __prompt_pulse_tui() {
-    %s -tui </dev/tty
+    if command -v prompt-pulse-tui >/dev/null 2>&1; then
+        prompt-pulse-tui </dev/tty
+    fi
 }
 trap '__prompt_pulse_keybd_handler' KEYBD
 __prompt_pulse_keybd_handler() {
@@ -52,7 +53,7 @@ __prompt_pulse_keybd_handler() {
     esac
 }
 
-`, opts.Keybinding, bin)
+`, opts.Keybinding)
 }
 
 // shKshCompletions generates a minimal completion setup for Ksh93.

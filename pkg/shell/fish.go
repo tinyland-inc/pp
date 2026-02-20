@@ -38,20 +38,21 @@ end
 // shFishKeybinding generates the keybinding block for Fish, binding in all
 // three modes (default, insert, visual).
 func shFishKeybinding(opts Options) string {
-	bin := shFishQuote(opts.BinaryPath)
 	// Convert the keybinding to fish format (e.g. "ctrl-p" -> \cp).
 	fishKey := shFishKeySequence(opts.Keybinding)
 	return fmt.Sprintf(`# Launch TUI with keybinding (%s)
 function __prompt_pulse_tui
     commandline -f repaint
-    %s -tui </dev/tty >/dev/tty 2>/dev/tty
+    if command -q prompt-pulse-tui
+        prompt-pulse-tui </dev/tty >/dev/tty 2>/dev/tty
+    end
     commandline -f repaint
 end
 bind %s __prompt_pulse_tui
 bind -M insert %s __prompt_pulse_tui
 bind -M visual %s __prompt_pulse_tui
 
-`, opts.Keybinding, bin, fishKey, fishKey, fishKey)
+`, opts.Keybinding, fishKey, fishKey, fishKey)
 }
 
 // shFishCompletions generates the completion block for Fish.

@@ -40,18 +40,19 @@ add-zsh-hook precmd __prompt_pulse_precmd
 // shZshKeybinding generates the keybinding block for Zsh using a ZLE widget
 // with proper /dev/tty redirection.
 func shZshKeybinding(opts Options) string {
-	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# ZLE widget for TUI launch with /dev/tty redirection
 __prompt_pulse_tui_widget() {
     BUFFER=""
     zle reset-prompt
-    %s -tui </dev/tty >/dev/tty 2>/dev/tty
+    if (( $+commands[prompt-pulse-tui] )); then
+        prompt-pulse-tui </dev/tty >/dev/tty 2>/dev/tty
+    fi
     zle reset-prompt
 }
 zle -N prompt-pulse-tui __prompt_pulse_tui_widget
 bindkey '^P' prompt-pulse-tui
 
-`, bin)
+`)
 }
 
 // shZshCompletions generates the completion block for Zsh.

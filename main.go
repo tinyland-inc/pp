@@ -37,7 +37,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/banner"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/daemon"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/docs"
@@ -383,15 +385,41 @@ func main() {
 			}
 		}()
 
-		// Create the TUI model with no widgets for now.
-		// Widget wiring to v2 collectors will be done in a follow-up.
-		model := tui.New(nil)
+		// Build widgets and collectors from config.
+		tuiWidgets, registry := buildTUIWidgetsAndCollectors(cfg)
+
+		model := tui.New(tuiWidgets)
 
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+
+		// Start collector runner that sends data updates to the TUI.
+		updatesCh := make(chan collectors.Update, collectors.DefaultUpdateBufferSize)
+		runner := collectors.NewRunner(registry, updatesCh)
+
+		if err := runner.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "collector runner error: %v\n", err)
 			os.Exit(1)
 		}
+
+		// Bridge goroutine: convert collector updates into Bubbletea messages.
+		go func() {
+			for update := range updatesCh {
+				p.Send(app.DataUpdateEvent{
+					Source:    update.Source,
+					Data:     update.Data,
+					Err:      update.Error,
+					Timestamp: update.Timestamp,
+				})
+			}
+		}()
+
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+			runner.Stop()
+			os.Exit(1)
+		}
+
+		runner.Stop()
 		os.Exit(0)
 	}
 

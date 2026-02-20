@@ -40,14 +40,15 @@ fi
 
 // shBashKeybinding generates the keybinding block for Bash.
 func shBashKeybinding(opts Options) string {
-	bin := shQuote(opts.BinaryPath)
 	return fmt.Sprintf(`# Launch TUI with keybinding (%s)
 __prompt_pulse_tui() {
-    %s -tui </dev/tty
+    if command -v prompt-pulse-tui >/dev/null 2>&1; then
+        prompt-pulse-tui </dev/tty
+    fi
 }
 bind -x '"%s": __prompt_pulse_tui'
 
-`, opts.Keybinding, bin, opts.Keybinding)
+`, opts.Keybinding, opts.Keybinding)
 }
 
 // shBashCompletions generates the completion block for Bash.
