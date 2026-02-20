@@ -451,6 +451,9 @@ func main() {
 			}
 		}()
 
+		// Bootstrap widgets from daemon cache for instant data display.
+		go bootstrapTUIFromCache(cfg.General.CacheDir, p)
+
 		if _, err := p.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 			runner.Stop()

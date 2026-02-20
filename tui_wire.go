@@ -1,9 +1,12 @@
 package main
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
@@ -173,6 +176,50 @@ func buildTUIWidgetsAndCollectors(cfg *config.Config) ([]app.Widget, *collectors
 	}
 
 	return ws, registry
+}
+
+// bootstrapTUIFromCache reads daemon-written JSON cache files and sends
+// DataUpdateEvents to pre-populate TUI widgets with data immediately,
+// rather than waiting for live collectors to complete their first cycle.
+// This eliminates the "No data" flash that occurs on TUI launch when the
+// daemon has already collected recent data. Safe to call from a goroutine.
+func bootstrapTUIFromCache(cacheDir string, p *tea.Program) {
+	now := time.Now()
+
+	type cacheEntry struct {
+		source string
+		data   interface{}
+	}
+
+	var entries []cacheEntry
+
+	if m, err := bnReadCache[sysmetrics.Metrics](cacheDir, "sysmetrics"); err == nil && m != nil {
+		entries = append(entries, cacheEntry{"sysmetrics", m})
+	}
+	if s, err := bnReadCache[tailscale.Status](cacheDir, "tailscale"); err == nil && s != nil {
+		entries = append(entries, cacheEntry{"tailscale", s})
+	}
+	if cs, err := bnReadCache[k8s.ClusterStatus](cacheDir, "k8s"); err == nil && cs != nil {
+		entries = append(entries, cacheEntry{"k8s", cs})
+	}
+	if r, err := bnReadCache[claude.UsageReport](cacheDir, "claude"); err == nil && r != nil {
+		entries = append(entries, cacheEntry{"claude", r})
+	}
+	if b, err := bnReadCache[billing.BillingReport](cacheDir, "billing"); err == nil && b != nil {
+		entries = append(entries, cacheEntry{"billing", b})
+	}
+
+	for _, e := range entries {
+		p.Send(app.DataUpdateEvent{
+			Source:    e.source,
+			Data:      e.data,
+			Timestamp: now,
+		})
+	}
+
+	if len(entries) > 0 {
+		log.Printf("tui: bootstrapped %d widgets from daemon cache", len(entries))
+	}
 }
 
 // buildClaudeAccounts converts the config's Claude account entries into
