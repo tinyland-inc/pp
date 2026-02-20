@@ -40,6 +40,7 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/banner"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/claudepersonal"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/daemon"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/docs"
@@ -71,6 +72,9 @@ func main() {
 		termHeight     = flag.Int("term-height", 0, "Terminal height override (0 = auto-detect)")
 		waifuMode      = flag.Bool("waifu", false, "Enable waifu image in banner")
 		sessionID      = flag.String("session-id", "", "Session ID for per-session waifu caching")
+		expandWidget   = flag.String("expand", "", "Widget ID to expand on TUI launch (e.g., waifu)")
+		claudeMsg      = flag.Bool("claude-msg", false, "Record a Claude personal plan message timestamp")
+		claudeModel    = flag.String("model", "", "Model name for --claude-msg (default: sonnet)")
 		showBanner     = flag.Bool("show-banner", false, "Show banner in shell integration")
 		daemonAutoStart = flag.Bool("daemon-autostart", false, "Auto-start daemon in shell integration")
 	)
@@ -211,6 +215,22 @@ func main() {
 		}
 		for _, w := range result.Warnings {
 			fmt.Printf("  Warning: %s\n", w)
+		}
+		os.Exit(0)
+	}
+
+	// ---------------------------------------------------------------
+	// Claude personal plan message recording (fast, no config needed)
+	// ---------------------------------------------------------------
+
+	if *claudeMsg {
+		mdl := *claudeModel
+		if mdl == "" {
+			mdl = "sonnet"
+		}
+		if err := claudepersonal.RecordMessage(mdl); err != nil {
+			fmt.Fprintf(os.Stderr, "claude-msg: %v\n", err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
@@ -399,7 +419,14 @@ func main() {
 		// Build widgets and collectors from config.
 		tuiWidgets, registry := buildTUIWidgetsAndCollectors(cfg)
 
-		model := tui.New(tuiWidgets)
+		var model tui.Model
+		if *expandWidget != "" {
+			model = tui.NewWithOptions(tuiWidgets, tui.Options{
+				InitialExpand: *expandWidget,
+			})
+		} else {
+			model = tui.New(tuiWidgets)
+		}
 
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 

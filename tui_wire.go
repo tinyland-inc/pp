@@ -2,16 +2,22 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/billing"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/claude"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/claudepersonal"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/k8s"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/sysmetrics"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/tailscale"
+	waifuCollector "gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/waifu"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/image"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/terminal"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/waifu"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/widgets"
 )
 
@@ -81,6 +87,44 @@ func buildTUIWidgetsAndCollectors(cfg *config.Config) ([]app.Widget, *collectors
 		ws = append(ws, widgets.NewClaudeWidget())
 	}
 
+	// --- Waifu ---
+	if cfg.Image.WaifuEnabled {
+		waifuCacheDir := cfg.Collectors.Waifu.CacheDir
+		if waifuCacheDir == "" {
+			waifuCacheDir = filepath.Join(cfg.General.CacheDir, "waifu")
+		}
+
+		sessionMgr := waifu.NewSessionManager(waifu.SessionConfig{
+			ImageDir: waifuCacheDir,
+			CacheDir: cfg.General.CacheDir,
+		})
+
+		caps := terminal.DetectCapabilities()
+		renderer := image.NewRenderer(*caps, cfg.Image)
+
+		ws = append(ws, widgets.NewWaifuWidget(sessionMgr, renderer, waifuCacheDir))
+
+		// Register the waifu collector if an endpoint is configured.
+		if cfg.Collectors.Waifu.Endpoint != "" {
+			interval := cfg.Collectors.Waifu.Interval.Duration
+			if interval <= 0 {
+				interval = 1 * time.Hour
+			}
+			category := cfg.Collectors.Waifu.Category
+			if category == "" {
+				category = cfg.Image.WaifuCategory
+			}
+			wc := waifuCollector.New(waifuCollector.Config{
+				Interval:  interval,
+				Endpoint:  cfg.Collectors.Waifu.Endpoint,
+				Category:  category,
+				CacheDir:  waifuCacheDir,
+				MaxImages: cfg.Collectors.Waifu.MaxImages,
+			}, nil)
+			_ = registry.Register(wc)
+		}
+	}
+
 	// --- Billing ---
 	if cfg.Collectors.Billing.Enabled {
 		interval := cfg.Collectors.Billing.Interval.Duration
@@ -115,6 +159,17 @@ func buildTUIWidgetsAndCollectors(cfg *config.Config) ([]app.Widget, *collectors
 		c := billing.New(bcfg)
 		_ = registry.Register(c)
 		ws = append(ws, widgets.NewBillingWidget())
+	}
+
+	// --- Claude Personal ---
+	// Always enabled: scans local JSONL files, no API key needed.
+	{
+		c := claudepersonal.New(claudepersonal.Config{
+			StateDir:  cfg.General.CacheDir,
+			Interval:  claudepersonal.DefaultScanInterval,
+		})
+		_ = registry.Register(c)
+		ws = append(ws, widgets.NewClaudePersonalWidget())
 	}
 
 	return ws, registry

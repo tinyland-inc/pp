@@ -2,7 +2,9 @@ package widgets
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,17 +39,33 @@ type WaifuWidget struct {
 	showInfo    bool   // whether the info overlay is active
 	loading     bool
 	err         error
+
+	// Sequential navigation state
+	imageList  []string // sorted list of image paths in the directory
+	imageIndex int      // current position in imageList (-1 = unknown)
+	imageDir   string   // directory containing images
 }
 
 // NewWaifuWidget creates a WaifuWidget bound to the given session manager
 // and image renderer. It obtains or creates a session immediately and marks
-// itself as loading until the first render completes.
-func NewWaifuWidget(sessionMgr *waifu.SessionManager, renderer ImageRenderer) *WaifuWidget {
+// itself as loading until the first render completes. The imageDir parameter
+// enables sequential navigation (next/prev) through images in that directory.
+func NewWaifuWidget(sessionMgr *waifu.SessionManager, renderer ImageRenderer, imageDir string) *WaifuWidget {
 	w := &WaifuWidget{
 		id:         "waifu",
 		sessionMgr: sessionMgr,
 		renderer:   renderer,
 		loading:    true,
+		imageDir:   imageDir,
+		imageIndex: -1,
+	}
+
+	// Load the image list for sequential navigation.
+	if imageDir != "" {
+		if images, err := waifu.ListImages(imageDir); err == nil && len(images) > 0 {
+			sort.Strings(images)
+			w.imageList = images
+		}
 	}
 
 	// Attempt to get or create a session. If the image directory is
@@ -59,6 +77,7 @@ func NewWaifuWidget(sessionMgr *waifu.SessionManager, renderer ImageRenderer) *W
 	} else {
 		w.session = session
 		w.overlayText = formatImageName(session.ImagePath)
+		w.imageIndex = w.findImageIndex(session.ImagePath)
 	}
 
 	return w
@@ -69,12 +88,18 @@ func (w *WaifuWidget) ID() string {
 	return w.id
 }
 
-// Title returns "Waifu" or the character name if a session is active.
+// Title returns "Waifu" or the character name with an index indicator
+// (e.g. "sakura bloom [3/200]") if a session is active and the image
+// list has been loaded.
 func (w *WaifuWidget) Title() string {
-	if w.overlayText != "" {
-		return w.overlayText
+	name := w.overlayText
+	if name == "" {
+		name = "Waifu"
 	}
-	return "Waifu"
+	if w.imageIndex >= 0 && len(w.imageList) > 0 {
+		return fmt.Sprintf("%s [%d/%d]", name, w.imageIndex+1, len(w.imageList))
+	}
+	return name
 }
 
 // Update handles messages directed at this widget. It processes
@@ -172,14 +197,26 @@ func (w *WaifuWidget) MinSize() (int, int) {
 }
 
 // HandleKey processes key events when this widget has focus.
-// 'r' triggers a refresh (pick new image), 'i' toggles the info overlay.
+// 'r' triggers a refresh (random), 'i' toggles info overlay,
+// 'n'/right navigates to next image, 'p'/left navigates to previous.
 func (w *WaifuWidget) HandleKey(key tea.KeyMsg) tea.Cmd {
+	switch key.Type {
+	case tea.KeyRight:
+		return w.navigateRelative(1)
+	case tea.KeyLeft:
+		return w.navigateRelative(-1)
+	}
+
 	switch key.String() {
 	case "r":
 		return w.refresh()
 	case "i":
 		w.showInfo = !w.showInfo
 		return nil
+	case "n":
+		return w.navigateRelative(1)
+	case "p":
+		return w.navigateRelative(-1)
 	}
 	return nil
 }
@@ -205,6 +242,7 @@ func (w *WaifuWidget) refresh() tea.Cmd {
 
 	w.session = session
 	w.overlayText = formatImageName(session.ImagePath)
+	w.imageIndex = w.findImageIndex(session.ImagePath)
 	w.rendered = ""
 	w.lastWidth = 0
 	w.lastHeight = 0
@@ -212,6 +250,59 @@ func (w *WaifuWidget) refresh() tea.Cmd {
 	w.err = nil
 
 	return nil
+}
+
+// findImageIndex returns the index of path in the sorted imageList,
+// or -1 if not found.
+func (w *WaifuWidget) findImageIndex(path string) int {
+	for i, p := range w.imageList {
+		if p == path {
+			return i
+		}
+	}
+	return -1
+}
+
+// navigateTo switches to the image at the given index, wrapping around
+// the image list boundaries.
+func (w *WaifuWidget) navigateTo(idx int) tea.Cmd {
+	if len(w.imageList) == 0 {
+		return nil
+	}
+
+	// Wrap around.
+	n := len(w.imageList)
+	idx = ((idx % n) + n) % n
+
+	imgPath := w.imageList[idx]
+	w.imageIndex = idx
+
+	// Create a new session for this image.
+	w.session = &waifu.Session{
+		ID:        fmt.Sprintf("ppulse-%d", os.Getpid()),
+		ImagePath: imgPath,
+	}
+	w.overlayText = formatImageName(imgPath)
+	w.rendered = ""
+	w.lastWidth = 0
+	w.lastHeight = 0
+	w.loading = true
+	w.err = nil
+
+	return nil
+}
+
+// navigateRelative moves delta positions from the current image index.
+// If the current index is unknown, starts from 0.
+func (w *WaifuWidget) navigateRelative(delta int) tea.Cmd {
+	if len(w.imageList) == 0 {
+		return nil
+	}
+	base := w.imageIndex
+	if base < 0 {
+		base = 0
+	}
+	return w.navigateTo(base + delta)
 }
 
 // renderLoading creates a centered loading indicator.
@@ -357,6 +448,22 @@ func (w *WaifuWidget) OverlayText() string {
 // ShowInfo returns whether the info overlay is active.
 func (w *WaifuWidget) ShowInfo() bool {
 	return w.showInfo
+}
+
+// ImageIndex returns the current position in the image list.
+func (w *WaifuWidget) ImageIndex() int {
+	return w.imageIndex
+}
+
+// ImageListLen returns the number of images in the navigation list.
+func (w *WaifuWidget) ImageListLen() int {
+	return len(w.imageList)
+}
+
+// SetImageList sets the image list and index for testing.
+func (w *WaifuWidget) SetImageList(list []string, index int) {
+	w.imageList = list
+	w.imageIndex = index
 }
 
 // compile-time check that WaifuWidget implements app.Widget.

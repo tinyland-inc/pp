@@ -10,6 +10,7 @@ func shGenerateFish(opts Options) string {
 `)
 	s += shFishBanner(opts)
 	s += shFishKeybinding(opts)
+	s += shFishWaifuKeybinding(opts)
 	s += shFishCompletions(opts)
 	s += shFishDaemonFunctions(opts)
 	s += shFishDaemonAutoStart(opts)
@@ -53,6 +54,28 @@ bind -M insert %s __prompt_pulse_tui
 bind -M visual %s __prompt_pulse_tui
 
 `, opts.Keybinding, fishKey, fishKey, fishKey)
+}
+
+// shFishWaifuKeybinding generates a keybinding that launches the TUI with
+// the waifu widget expanded (ctrl-w by default).
+func shFishWaifuKeybinding(opts Options) string {
+	if opts.WaifuKeybinding == "" {
+		return ""
+	}
+	fishKey := shFishKeySequence(opts.WaifuKeybinding)
+	return fmt.Sprintf(`# Launch TUI with waifu expanded (%s)
+function __prompt_pulse_waifu
+    commandline -f repaint
+    if command -q prompt-pulse-tui
+        prompt-pulse-tui --expand waifu </dev/tty >/dev/tty 2>/dev/tty
+    end
+    commandline -f repaint
+end
+bind %s __prompt_pulse_waifu
+bind -M insert %s __prompt_pulse_waifu
+bind -M visual %s __prompt_pulse_waifu
+
+`, opts.WaifuKeybinding, fishKey, fishKey, fishKey)
 }
 
 // shFishCompletions generates the completion block for Fish.
@@ -124,6 +147,8 @@ func shFishKeySequence(kb string) string {
 	switch kb {
 	case "ctrl-p", `\C-p`:
 		return `\cp`
+	case "ctrl-w", `\C-w`:
+		return `\cw`
 	case "ctrl-g", `\C-g`:
 		return `\cg`
 	case "ctrl-o", `\C-o`:

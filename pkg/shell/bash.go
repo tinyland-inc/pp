@@ -10,6 +10,7 @@ func shGenerateBash(opts Options) string {
 `)
 	s += shBashBanner(opts)
 	s += shBashKeybinding(opts)
+	s += shBashWaifuKeybinding(opts)
 	s += shBashCompletions(opts)
 	s += shBashDaemonFunctions(opts)
 	s += shBashDaemonAutoStart(opts)
@@ -49,6 +50,23 @@ __prompt_pulse_tui() {
 bind -x '"%s": __prompt_pulse_tui'
 
 `, opts.Keybinding, opts.Keybinding)
+}
+
+// shBashWaifuKeybinding generates a keybinding that launches the TUI with
+// the waifu widget expanded (ctrl-w by default).
+func shBashWaifuKeybinding(opts Options) string {
+	if opts.WaifuKeybinding == "" {
+		return ""
+	}
+	return fmt.Sprintf(`# Launch TUI with waifu expanded (%s)
+__prompt_pulse_waifu() {
+    if command -v prompt-pulse-tui >/dev/null 2>&1; then
+        prompt-pulse-tui --expand waifu </dev/tty
+    fi
+}
+bind -x '"%s": __prompt_pulse_waifu'
+
+`, opts.WaifuKeybinding, opts.WaifuKeybinding)
 }
 
 // shBashCompletions generates the completion block for Bash.

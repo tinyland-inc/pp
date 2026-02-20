@@ -78,7 +78,18 @@ func TestTitleDefault(t *testing.T) {
 func TestTitleWithSession(t *testing.T) {
 	session := newTestSession("/images/sakura_bloom.png")
 	w := newTestWidget(&mockRenderer{}, session)
+	// No imageList, so no index indicator.
 	want := "sakura bloom"
+	if got := w.Title(); got != want {
+		t.Errorf("Title() = %q, want %q", got, want)
+	}
+}
+
+func TestTitleWithIndexIndicator(t *testing.T) {
+	session := newTestSession("/images/b_image.png")
+	w := newTestWidget(&mockRenderer{}, session)
+	w.SetImageList([]string{"/images/a_image.png", "/images/b_image.png", "/images/c_image.png"}, 1)
+	want := "b image [2/3]"
 	if got := w.Title(); got != want {
 		t.Errorf("Title() = %q, want %q", got, want)
 	}
@@ -478,5 +489,79 @@ func TestRenderErrorDimensions(t *testing.T) {
 	lines := strings.Split(result, "\n")
 	if len(lines) != 10 {
 		t.Errorf("RenderError should produce %d lines, got %d", 10, len(lines))
+	}
+}
+
+func TestHandleKeyNext(t *testing.T) {
+	session := newTestSession("/images/b.png")
+	w := newTestWidget(&mockRenderer{output: "IMG"}, session)
+	w.SetImageList([]string{"/images/a.png", "/images/b.png", "/images/c.png"}, 1)
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if w.ImageIndex() != 2 {
+		t.Errorf("after 'n': ImageIndex() = %d, want 2", w.ImageIndex())
+	}
+	if w.session == nil || w.session.ImagePath != "/images/c.png" {
+		t.Errorf("after 'n': ImagePath = %q, want /images/c.png", w.session.ImagePath)
+	}
+}
+
+func TestHandleKeyPrev(t *testing.T) {
+	session := newTestSession("/images/b.png")
+	w := newTestWidget(&mockRenderer{output: "IMG"}, session)
+	w.SetImageList([]string{"/images/a.png", "/images/b.png", "/images/c.png"}, 1)
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if w.ImageIndex() != 0 {
+		t.Errorf("after 'p': ImageIndex() = %d, want 0", w.ImageIndex())
+	}
+	if w.session == nil || w.session.ImagePath != "/images/a.png" {
+		t.Errorf("after 'p': ImagePath = %q, want /images/a.png", w.session.ImagePath)
+	}
+}
+
+func TestNavigationWrapsForward(t *testing.T) {
+	session := newTestSession("/images/c.png")
+	w := newTestWidget(&mockRenderer{output: "IMG"}, session)
+	w.SetImageList([]string{"/images/a.png", "/images/b.png", "/images/c.png"}, 2)
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if w.ImageIndex() != 0 {
+		t.Errorf("wrap forward: ImageIndex() = %d, want 0", w.ImageIndex())
+	}
+}
+
+func TestNavigationWrapsBackward(t *testing.T) {
+	session := newTestSession("/images/a.png")
+	w := newTestWidget(&mockRenderer{output: "IMG"}, session)
+	w.SetImageList([]string{"/images/a.png", "/images/b.png", "/images/c.png"}, 0)
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if w.ImageIndex() != 2 {
+		t.Errorf("wrap backward: ImageIndex() = %d, want 2", w.ImageIndex())
+	}
+}
+
+func TestNavigationArrowKeys(t *testing.T) {
+	session := newTestSession("/images/b.png")
+	w := newTestWidget(&mockRenderer{output: "IMG"}, session)
+	w.SetImageList([]string{"/images/a.png", "/images/b.png", "/images/c.png"}, 1)
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	if w.ImageIndex() != 2 {
+		t.Errorf("after Right: ImageIndex() = %d, want 2", w.ImageIndex())
+	}
+
+	_ = w.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if w.ImageIndex() != 1 {
+		t.Errorf("after Left: ImageIndex() = %d, want 1", w.ImageIndex())
+	}
+}
+
+func TestNavigationNoImages(t *testing.T) {
+	w := newTestWidget(&mockRenderer{}, nil)
+	cmd := w.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Error("navigation with no images should return nil")
 	}
 }

@@ -10,6 +10,7 @@ func shGenerateZsh(opts Options) string {
 `)
 	s += shZshBanner(opts)
 	s += shZshKeybinding(opts)
+	s += shZshWaifuKeybinding(opts)
 	s += shZshCompletions(opts)
 	s += shZshDaemonFunctions(opts)
 	s += shZshDaemonAutoStart(opts)
@@ -53,6 +54,27 @@ zle -N prompt-pulse-tui __prompt_pulse_tui_widget
 bindkey '^P' prompt-pulse-tui
 
 `)
+}
+
+// shZshWaifuKeybinding generates a ZLE widget that launches the TUI with
+// the waifu widget expanded (ctrl-w by default).
+func shZshWaifuKeybinding(opts Options) string {
+	if opts.WaifuKeybinding == "" {
+		return ""
+	}
+	return `# ZLE widget for waifu fullscreen launch
+__prompt_pulse_waifu_widget() {
+    BUFFER=""
+    zle reset-prompt
+    if (( $+commands[prompt-pulse-tui] )); then
+        prompt-pulse-tui --expand waifu </dev/tty >/dev/tty 2>/dev/tty
+    fi
+    zle reset-prompt
+}
+zle -N prompt-pulse-waifu __prompt_pulse_waifu_widget
+bindkey '^W' prompt-pulse-waifu
+
+`
 }
 
 // shZshCompletions generates the completion block for Zsh.

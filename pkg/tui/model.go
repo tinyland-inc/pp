@@ -23,6 +23,13 @@ type Model struct {
 	ready       bool         // initial size received
 }
 
+// Options configures optional behaviors for the TUI model.
+type Options struct {
+	// InitialExpand is the widget ID to expand on startup. Empty means
+	// no widget is initially expanded.
+	InitialExpand string
+}
+
 // New creates a new TUI Model with the given widgets. The first widget
 // receives initial focus, no widget is expanded, and help is hidden.
 func New(widgets []app.Widget) Model {
@@ -31,6 +38,23 @@ func New(widgets []app.Widget) Model {
 		focused:  0,
 		expanded: -1,
 	}
+}
+
+// NewWithOptions creates a TUI Model and applies initial options. If
+// InitialExpand names a widget ID present in the list, that widget starts
+// expanded and focused.
+func NewWithOptions(widgets []app.Widget, opts Options) Model {
+	m := New(widgets)
+	if opts.InitialExpand != "" {
+		for i, w := range widgets {
+			if w.ID() == opts.InitialExpand {
+				m.focused = i
+				m.expanded = i
+				break
+			}
+		}
+	}
+	return m
 }
 
 // Init implements tea.Model. No initial commands are needed.

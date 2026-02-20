@@ -249,10 +249,25 @@ func (c *Collector) Collect(ctx context.Context) (interface{}, error) {
 }
 
 // collectCivo queries the Civo API and returns a ProviderBilling result.
+// It first attempts to use the /v2/charges endpoint for actual spend data.
+// If charges are available and non-empty, sum(TotalCost) is used as the
+// authoritative MonthToDate value. Resource listing (k8s + instances) always
+// runs to populate the Resources breakdown regardless of charges availability.
 func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 	pb := ProviderBilling{
 		Name:      "civo",
 		Resources: []ResourceCost{},
+	}
+
+	// Try charges API first for actual spend data.
+	var chargesTotal float64
+	hasCharges := false
+	charges, chargesErr := c.civoClient.GetCharges(ctx)
+	if chargesErr == nil && charges != nil && len(charges.Items) > 0 {
+		for _, ch := range charges.Items {
+			chargesTotal += ch.TotalCost
+		}
+		hasCharges = true
 	}
 
 	// Fetch Kubernetes clusters.
@@ -265,6 +280,7 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 	// Build a sizes price map for enrichment when cluster.MonthlyCost is 0.
 	sizePrices := c.fetchSizePrices(ctx)
 
+	var estimatedTotal float64
 	if k8s != nil {
 		for _, cluster := range k8s.Items {
 			cost := cluster.MonthlyCost
@@ -276,7 +292,7 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 				Type:        "kubernetes",
 				MonthlyCost: cost,
 			})
-			pb.MonthToDate += cost
+			estimatedTotal += cost
 		}
 	}
 
@@ -300,8 +316,15 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 				Type:        "instance",
 				MonthlyCost: cost,
 			})
-			pb.MonthToDate += cost
+			estimatedTotal += cost
 		}
+	}
+
+	// Use charges API total if available, otherwise fall back to estimation.
+	if hasCharges {
+		pb.MonthToDate = chargesTotal
+	} else {
+		pb.MonthToDate = estimatedTotal
 	}
 
 	pb.Connected = true

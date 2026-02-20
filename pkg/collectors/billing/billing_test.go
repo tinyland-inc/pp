@@ -213,9 +213,9 @@ func TestCollect_CivoOnly(t *testing.T) {
 		t.Errorf("Provider.Error = %q, want empty", prov.Error)
 	}
 
-	// MonthToDate = k8s (20+15) + instances (10) = 45.00
-	if !floatEqual(prov.MonthToDate, 45.00) {
-		t.Errorf("MonthToDate = %f, want 45.00", prov.MonthToDate)
+	// MonthToDate = charges (25.50+10.00) = 35.50 (charges preferred over estimation).
+	if !floatEqual(prov.MonthToDate, 35.50) {
+		t.Errorf("MonthToDate = %f, want 35.50", prov.MonthToDate)
 	}
 
 	// 2 k8s clusters + 1 instance = 3 resources
@@ -242,9 +242,9 @@ func TestCollect_CivoOnly(t *testing.T) {
 		t.Errorf("Resources[2].Type = %q, want %q", prov.Resources[2].Type, "instance")
 	}
 
-	// TotalMonthlyUSD should equal Civo month-to-date.
-	if !floatEqual(report.TotalMonthlyUSD, 45.00) {
-		t.Errorf("TotalMonthlyUSD = %f, want 45.00", report.TotalMonthlyUSD)
+	// TotalMonthlyUSD should equal Civo month-to-date (charges-based).
+	if !floatEqual(report.TotalMonthlyUSD, 35.50) {
+		t.Errorf("TotalMonthlyUSD = %f, want 35.50", report.TotalMonthlyUSD)
 	}
 }
 
@@ -330,8 +330,8 @@ func TestCollect_BothProviders(t *testing.T) {
 		t.Fatalf("Providers len = %d, want 2", len(report.Providers))
 	}
 
-	// Total = Civo (45.00) + DO (45.67) = 90.67
-	expectedTotal := 45.00 + 45.67
+	// Total = Civo charges (35.50) + DO (45.67) = 81.17
+	expectedTotal := 35.50 + 45.67
 	if !floatEqual(report.TotalMonthlyUSD, expectedTotal) {
 		t.Errorf("TotalMonthlyUSD = %f, want %f", report.TotalMonthlyUSD, expectedTotal)
 	}
@@ -436,9 +436,9 @@ func TestCollect_DOError_CivoStillWorks(t *testing.T) {
 		t.Error("digitalocean.Error should not be empty")
 	}
 
-	// TotalMonthlyUSD should only include Civo (k8s 20+15 + instance 10).
-	if !floatEqual(report.TotalMonthlyUSD, 45.00) {
-		t.Errorf("TotalMonthlyUSD = %f, want 45.00 (Civo only)", report.TotalMonthlyUSD)
+	// TotalMonthlyUSD should only include Civo charges (25.50+10.00 = 35.50).
+	if !floatEqual(report.TotalMonthlyUSD, 35.50) {
+		t.Errorf("TotalMonthlyUSD = %f, want 35.50 (Civo only)", report.TotalMonthlyUSD)
 	}
 
 	if !c.Healthy() {
@@ -465,8 +465,8 @@ func TestCollect_BudgetPercentage(t *testing.T) {
 		t.Errorf("BudgetUSD = %f, want 100.00", report.BudgetUSD)
 	}
 
-	// Civo month-to-date = 45.00, budget = 100 => 45.0%
-	expectedPercent := 45.00
+	// Civo charges = 35.50, budget = 100 => 35.5%
+	expectedPercent := 35.50
 	if !floatEqual(report.BudgetPercent, expectedPercent) {
 		t.Errorf("BudgetPercent = %f, want %f", report.BudgetPercent, expectedPercent)
 	}
@@ -1013,3 +1013,115 @@ var _ collectorIface = (*Collector)(nil)
 // Ensure mock clients satisfy their interfaces.
 var _ CivoClient = (*mockCivoClient)(nil)
 var _ DOClient = (*mockDOClient)(nil)
+
+// ---------------------------------------------------------------------------
+// CIVO Charges API integration tests
+// ---------------------------------------------------------------------------
+
+func TestCollect_CivoChargesPreferred(t *testing.T) {
+	// When charges API returns data, MonthToDate should use charges total
+	// instead of resource estimation.
+	civo := &mockCivoClient{
+		charges: &CivoChargesResponse{
+			Items: []CivoCharge{
+				{Code: "k8s-cluster", Label: "K8s Cluster", TotalCost: 35.50},
+				{Code: "lb-1", Label: "Load Balancer", TotalCost: 10.00},
+			},
+		},
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{ID: "k8s-1", Name: "test-cluster", MonthlyCost: 40.00},
+			},
+		},
+		instances: &CivoInstancesResponse{Items: []CivoInstance{}},
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// Charges total = 35.50 + 10.00 = 45.50 (NOT the resource estimate of 40.00)
+	if !floatEqual(prov.MonthToDate, 45.50) {
+		t.Errorf("MonthToDate = %f, want 45.50 (charges preferred over estimation)", prov.MonthToDate)
+	}
+
+	// Resources should still be populated for breakdown.
+	if len(prov.Resources) != 1 {
+		t.Errorf("Resources len = %d, want 1", len(prov.Resources))
+	}
+}
+
+func TestCollect_CivoChargesErrorFallback(t *testing.T) {
+	// When charges API fails, should fall back to resource estimation.
+	civo := &mockCivoClient{
+		chargesErr: errors.New("charges endpoint unavailable"),
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{ID: "k8s-1", Name: "test-cluster", MonthlyCost: 60.00},
+			},
+		},
+		instances: &CivoInstancesResponse{
+			Items: []CivoInstance{
+				{ID: "inst-1", Hostname: "web-01", MonthlyCost: 10.00},
+			},
+		},
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// Charges failed, so estimation: 60.00 + 10.00 = 70.00
+	if !floatEqual(prov.MonthToDate, 70.00) {
+		t.Errorf("MonthToDate = %f, want 70.00 (fallback to estimation)", prov.MonthToDate)
+	}
+	if !prov.Connected {
+		t.Error("civo should still be connected (charges error is non-fatal)")
+	}
+}
+
+func TestCollect_CivoEmptyChargesFallback(t *testing.T) {
+	// When charges API returns empty items, should fall back to estimation.
+	civo := &mockCivoClient{
+		charges: &CivoChargesResponse{Items: []CivoCharge{}},
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{ID: "k8s-1", Name: "test-cluster", MonthlyCost: 25.00},
+			},
+		},
+		instances: &CivoInstancesResponse{Items: []CivoInstance{}},
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// Empty charges → fallback to estimation: 25.00
+	if !floatEqual(prov.MonthToDate, 25.00) {
+		t.Errorf("MonthToDate = %f, want 25.00 (empty charges = fallback)", prov.MonthToDate)
+	}
+}

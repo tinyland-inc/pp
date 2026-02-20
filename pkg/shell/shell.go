@@ -38,6 +38,11 @@ type Options struct {
 	// Defaults vary by shell: "\C-p" for bash/zsh/ksh, "ctrl-p" for fish.
 	Keybinding string
 
+	// WaifuKeybinding is the key combo to launch TUI in expanded waifu mode.
+	// Defaults vary by shell: "\C-w" for bash/zsh/ksh, "ctrl-w" for fish.
+	// Set to empty string to disable.
+	WaifuKeybinding string
+
 	// ShowBanner displays the system status banner on shell start.
 	ShowBanner bool
 
@@ -61,6 +66,14 @@ func shDefaultOptions(shell ShellType, opts Options) Options {
 			opts.Keybinding = "ctrl-p"
 		default:
 			opts.Keybinding = `\C-p`
+		}
+	}
+	if opts.WaifuKeybinding == "" {
+		switch shell {
+		case Fish:
+			opts.WaifuKeybinding = "ctrl-w"
+		default:
+			opts.WaifuKeybinding = `\C-w`
 		}
 	}
 	return opts

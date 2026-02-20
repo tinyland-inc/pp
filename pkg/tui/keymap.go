@@ -83,13 +83,10 @@ func tuiHandleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Arrow keys: pass to the focused widget's HandleKey.
-	switch msg.Type {
-	case tea.KeyUp, tea.KeyDown, tea.KeyLeft, tea.KeyRight:
-		if m.focused >= 0 && m.focused < len(m.widgets) {
-			cmd := m.widgets[m.focused].HandleKey(msg)
-			return m, cmd
-		}
+	// Forward remaining keys (arrows, unhandled runes) to the focused widget.
+	if m.focused >= 0 && m.focused < len(m.widgets) {
+		cmd := m.widgets[m.focused].HandleKey(msg)
+		return m, cmd
 	}
 
 	return m, nil
