@@ -77,6 +77,17 @@ type CollectorsConfig struct {
 	Kubernetes K8sCollectorConfig        `toml:"kubernetes"`
 	Claude     ClaudeCollectorConfig     `toml:"claude"`
 	Billing    BillingCollectorConfig    `toml:"billing"`
+	Waifu      WaifuCollectorConfig      `toml:"waifu"`
+}
+
+// WaifuCollectorConfig controls waifu image fetching and local caching.
+type WaifuCollectorConfig struct {
+	Enabled   bool     `toml:"enabled"`
+	Interval  Duration `toml:"interval"`
+	Endpoint  string   `toml:"endpoint"`
+	Category  string   `toml:"category"`
+	CacheDir  string   `toml:"cache_dir"`
+	MaxImages int      `toml:"max_images"`
 }
 
 // SysMetricsCollectorConfig controls system metrics collection.

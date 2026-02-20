@@ -14,6 +14,7 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/k8s"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/sysmetrics"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/tailscale"
+	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/waifu"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 )
 
@@ -77,6 +78,22 @@ func BuildRegistry(cfg *config.Config) *collectors.Registry {
 		)
 		if err := reg.Register(c); err != nil {
 			log.Printf("daemon: register claude: %v", err)
+		}
+	}
+
+	if cfg.Collectors.Waifu.Enabled {
+		wcfg := waifu.Config{
+			Interval:  cfg.Collectors.Waifu.Interval.Duration,
+			Endpoint:  cfg.Collectors.Waifu.Endpoint,
+			Category:  cfg.Collectors.Waifu.Category,
+			MaxImages: cfg.Collectors.Waifu.MaxImages,
+		}
+		if wcfg.CacheDir = cfg.Collectors.Waifu.CacheDir; wcfg.CacheDir == "" {
+			wcfg.CacheDir = filepath.Join(cfg.General.CacheDir, "waifu")
+		}
+		c := waifu.New(wcfg, nil)
+		if err := reg.Register(c); err != nil {
+			log.Printf("daemon: register waifu: %v", err)
 		}
 	}
 
