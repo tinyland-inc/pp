@@ -2,7 +2,8 @@
 //
 // It collects status from Claude Code sessions, cloud billing APIs, and
 // infrastructure health checks, then surfaces that information through
-// Starship prompt segments, an inline banner, or an interactive TUI.
+// Starship prompt segments and an inline banner. The interactive TUI is
+// provided by the separate prompt-pulse-tui Rust binary.
 //
 // Usage:
 //
@@ -12,7 +13,6 @@
 //
 //	-banner           Display system status banner
 //	-daemon           Run background daemon
-//	-tui              Launch interactive Bubbletea TUI
 //	-starship string  Output one-line Starship segment (claude|billing|infra|all)
 //	-shell string     Output shell integration script (bash|zsh|fish|ksh)
 //	-config string    Path to configuration file (default: ~/.config/prompt-pulse/config.toml)
@@ -35,11 +35,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
-
-	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/banner"
-	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/collectors/claudepersonal"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/config"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/daemon"
@@ -48,14 +44,12 @@ import (
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/shell"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/starship"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/theme"
-	"gitlab.com/tinyland/lab/prompt-pulse/pkg/tui"
 )
 
 func main() {
 	var (
 		configPath     = flag.String("config", "", "Path to configuration file (default: ~/.config/prompt-pulse/config.toml)")
 		runDaemon      = flag.Bool("daemon", false, "Run background daemon")
-		runTUI         = flag.Bool("tui", false, "Launch interactive Bubbletea TUI")
 		runBanner      = flag.Bool("banner", false, "Display system status banner")
 		starshipMod    = flag.String("starship", "", "Output one-line Starship segment (claude|billing|infra|all)")
 		shellType      = flag.String("shell", "", "Output shell integration script (bash|zsh|fish|ksh)")
@@ -72,7 +66,6 @@ func main() {
 		termHeight     = flag.Int("term-height", 0, "Terminal height override (0 = auto-detect)")
 		waifuMode      = flag.Bool("waifu", false, "Enable waifu image in banner")
 		sessionID      = flag.String("session-id", "", "Session ID for per-session waifu caching")
-		expandWidget   = flag.String("expand", "", "Widget ID to expand on TUI launch (e.g., waifu)")
 		claudeMsg      = flag.Bool("claude-msg", false, "Record a Claude personal plan message timestamp")
 		claudeModel    = flag.String("model", "", "Model name for --claude-msg (default: sonnet)")
 		showBanner     = flag.Bool("show-banner", false, "Show banner in shell integration")
@@ -94,7 +87,7 @@ func main() {
 		// Generate the main prompt-pulse man page in roff format.
 		mp.Format = "roff"
 		mp.Add("prompt-pulse", "prompt-pulse",
-			"Terminal dashboard with live data, waifu rendering, and TUI mode.",
+			"Infrastructure status daemon with Starship segments and banner rendering.",
 			1,
 		)
 		output, err := mp.GenerateSingle()
@@ -399,68 +392,6 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Print(result)
-		os.Exit(0)
-	}
-
-	// ---------------------------------------------------------------
-	// TUI mode
-	// ---------------------------------------------------------------
-
-	if *runTUI {
-		defer func() {
-			if r := recover(); r != nil {
-				// Attempt to restore terminal from alt-screen before printing error.
-				fmt.Print("\x1b[?1049l\x1b[?25h")
-				fmt.Fprintf(os.Stderr, "prompt-pulse: TUI panic: %v\n", r)
-				os.Exit(1)
-			}
-		}()
-
-		// Build widgets and collectors from config.
-		tuiWidgets, registry := buildTUIWidgetsAndCollectors(cfg)
-
-		var model tui.Model
-		if *expandWidget != "" {
-			model = tui.NewWithOptions(tuiWidgets, tui.Options{
-				InitialExpand: *expandWidget,
-			})
-		} else {
-			model = tui.New(tuiWidgets)
-		}
-
-		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
-
-		// Start collector runner that sends data updates to the TUI.
-		updatesCh := make(chan collectors.Update, collectors.DefaultUpdateBufferSize)
-		runner := collectors.NewRunner(registry, updatesCh)
-
-		if err := runner.Start(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "collector runner error: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Bridge goroutine: convert collector updates into Bubbletea messages.
-		go func() {
-			for update := range updatesCh {
-				p.Send(app.DataUpdateEvent{
-					Source:    update.Source,
-					Data:     update.Data,
-					Err:      update.Error,
-					Timestamp: update.Timestamp,
-				})
-			}
-		}()
-
-		// Bootstrap widgets from daemon cache for instant data display.
-		go bootstrapTUIFromCache(cfg.General.CacheDir, p)
-
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
-			runner.Stop()
-			os.Exit(1)
-		}
-
-		runner.Stop()
 		os.Exit(0)
 	}
 

@@ -141,8 +141,8 @@ func TestPipelineFullExecution(t *testing.T) {
 		}
 	}
 
-	if len(results) != 9 {
-		t.Errorf("expected 9 stages, got %d", len(results))
+	if len(results) != 8 {
+		t.Errorf("expected 8 stages, got %d", len(results))
 	}
 }
 
@@ -247,14 +247,6 @@ func TestBannerAllWidgets(t *testing.T) {
 
 func TestBannerResize(t *testing.T) {
 	itTestBannerResize(t)
-}
-
-func TestTUIKeyNav(t *testing.T) {
-	itTestTUIKeyNav(t)
-}
-
-func TestTUISearch(t *testing.T) {
-	itTestTUISearch(t)
 }
 
 func TestEmptyState(t *testing.T) {
@@ -610,66 +602,6 @@ func TestLayoutWithMarginAndSpacing(t *testing.T) {
 	// X positions should respect margin.
 	if rects[0].X != 2 {
 		t.Errorf("rect[0] X: got %d, want 2", rects[0].X)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// TUI model state tests
-// ---------------------------------------------------------------------------
-
-func TestTUIModelReady(t *testing.T) {
-	widgets := itMockAppWidgets()
-	m := itNewTUIModel(widgets)
-
-	if m.Ready() {
-		t.Error("model should not be ready before resize")
-	}
-
-	m = itTUISendResize(m, 120, 35)
-	if !m.Ready() {
-		t.Error("model should be ready after resize")
-	}
-	if m.Width() != 120 {
-		t.Errorf("width: got %d, want 120", m.Width())
-	}
-	if m.Height() != 35 {
-		t.Errorf("height: got %d, want 35", m.Height())
-	}
-}
-
-func TestTUIHelpToggle(t *testing.T) {
-	widgets := itMockAppWidgets()
-	m := itNewTUIModel(widgets)
-	m = itTUISendResize(m, 120, 35)
-
-	if m.ShowHelp() {
-		t.Error("help should be hidden initially")
-	}
-
-	m = itTUISendKey(m, "?")
-	if !m.ShowHelp() {
-		t.Error("help should be visible after ?")
-	}
-
-	m = itTUISendKey(m, "?")
-	if m.ShowHelp() {
-		t.Error("help should be hidden after second ?")
-	}
-}
-
-func TestTUIFocusWrap(t *testing.T) {
-	widgets := itMockAppWidgets()
-	m := itNewTUIModel(widgets)
-	m = itTUISendResize(m, 120, 35)
-
-	// Tab through all widgets and back to start.
-	n := len(widgets)
-	for i := 0; i < n; i++ {
-		m = itTUISendKey(m, "tab")
-	}
-	// Should wrap back to 0.
-	if m.Focused() != 0 {
-		t.Errorf("after %d tabs: focus got %d, want 0", n, m.Focused())
 	}
 }
 

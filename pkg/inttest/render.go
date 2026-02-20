@@ -70,86 +70,7 @@ func itTestBannerResize(t *testing.T) {
 	}
 }
 
-// itTestTUIKeyNav simulates a sequence of key presses on the TUI model
-// and verifies focus and expansion state changes correctly.
-func itTestTUIKeyNav(t *testing.T) {
-	t.Helper()
-
-	widgets := itMockAppWidgets()
-	m := itNewTUIModel(widgets)
-	m = itTUISendResize(m, 120, 35)
-
-	// Initial state: first widget focused, none expanded.
-	if m.Focused() != 0 {
-		t.Errorf("initial focus: got %d, want 0", m.Focused())
-	}
-	if m.Expanded() != -1 {
-		t.Errorf("initial expanded: got %d, want -1", m.Expanded())
-	}
-
-	// Tab: move focus forward.
-	m = itTUISendKey(m, "tab")
-	if m.Focused() != 1 {
-		t.Errorf("after tab: focus got %d, want 1", m.Focused())
-	}
-
-	// Shift+Tab: move focus backward.
-	m = itTUISendKey(m, "shift+tab")
-	if m.Focused() != 0 {
-		t.Errorf("after shift+tab: focus got %d, want 0", m.Focused())
-	}
-
-	// Enter: expand focused widget.
-	m = itTUISendKey(m, "enter")
-	if m.Expanded() != 0 {
-		t.Errorf("after enter: expanded got %d, want 0", m.Expanded())
-	}
-
-	// Escape: collapse expanded widget.
-	m = itTUISendKey(m, "esc")
-	if m.Expanded() != -1 {
-		t.Errorf("after esc: expanded got %d, want -1", m.Expanded())
-	}
-}
-
-// itTestTUISearch simulates entering search mode, typing a filter query,
-// and verifying the model state.
-func itTestTUISearch(t *testing.T) {
-	t.Helper()
-
-	widgets := itMockAppWidgets()
-	m := itNewTUIModel(widgets)
-	m = itTUISendResize(m, 120, 35)
-
-	// Enter search mode with "/".
-	m = itTUISendKey(m, "/")
-	if !m.SearchMode() {
-		t.Error("after /: search mode should be active")
-	}
-	if m.SearchQuery() != "" {
-		t.Errorf("after /: search query should be empty, got %q", m.SearchQuery())
-	}
-
-	// Type filter text.
-	m = itTUISendRunes(m, "claude")
-	if m.SearchQuery() != "claude" {
-		t.Errorf("after typing: search query got %q, want %q", m.SearchQuery(), "claude")
-	}
-
-	// Verify view contains search bar.
-	view := m.View()
-	if !strings.Contains(view, "/") {
-		t.Error("search mode view should contain search indicator")
-	}
-
-	// Escape search mode.
-	m = itTUISendKey(m, "esc")
-	if m.SearchMode() {
-		t.Error("after esc: search mode should be inactive")
-	}
-}
-
-// itTestEmptyState renders the banner and TUI with no widget data and
+// itTestEmptyState renders the banner with no widget data and
 // verifies graceful handling.
 func itTestEmptyState(t *testing.T) {
 	t.Helper()
@@ -179,14 +100,5 @@ func itTestEmptyState(t *testing.T) {
 			// That is acceptable.
 		}
 		_ = output
-	})
-
-	// TUI with no widgets.
-	t.Run("tui_empty", func(t *testing.T) {
-		m := itNewTUIModel(nil)
-		m = itTUISendResize(m, 120, 35)
-		view := m.View()
-		// Should not panic; output is some kind of placeholder or empty grid.
-		_ = view
 	})
 }

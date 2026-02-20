@@ -158,9 +158,9 @@ func TestSubSections(t *testing.T) {
 
 func TestArchDocAll29Packages(t *testing.T) {
 	doc := dcGenerateArchDoc()
-	// 28 top-level packages + 5 collector sub-packages = 33 entries
-	if len(doc.Packages) != 33 {
-		t.Errorf("package count = %d, want 33", len(doc.Packages))
+	// 24 top-level packages + 5 collector sub-packages = 29 entries
+	if len(doc.Packages) != 29 {
+		t.Errorf("package count = %d, want 29", len(doc.Packages))
 	}
 
 	// Verify some key packages exist
@@ -172,9 +172,8 @@ func TestArchDocAll29Packages(t *testing.T) {
 	required := []string{
 		"layout", "terminal", "config", "app",
 		"image", "components", "theme",
-		"data", "cache", "widgets", "waifu",
+		"data", "cache",
 		"shell", "starship", "banner",
-		"tui", "preset",
 		"emacs", "daemon",
 		"perf", "termtest", "shelltest", "inttest",
 		"platform", "sysinfo",
@@ -214,8 +213,8 @@ func TestArchDocCollectorPackages(t *testing.T) {
 func TestArchDocLayerAssignments(t *testing.T) {
 	doc := dcGenerateArchDoc()
 
-	if len(doc.Layers) != 10 {
-		t.Errorf("layer count = %d, want 10", len(doc.Layers))
+	if len(doc.Layers) != 8 {
+		t.Errorf("layer count = %d, want 8", len(doc.Layers))
 	}
 
 	layerNames := make(map[string]bool)
@@ -224,8 +223,8 @@ func TestArchDocLayerAssignments(t *testing.T) {
 	}
 
 	expected := []string{
-		"Core", "Rendering", "Data", "Widget", "Shell",
-		"TUI", "Integration", "Testing", "Platform", "Packaging",
+		"Core", "Rendering", "Data", "Shell",
+		"Integration", "Testing", "Platform", "Packaging",
 	}
 	for _, name := range expected {
 		if !layerNames[name] {
@@ -242,8 +241,8 @@ func TestArchDocDependencyGraph(t *testing.T) {
 	if !strings.Contains(doc.Diagram, "app") {
 		t.Error("diagram missing app node")
 	}
-	if !strings.Contains(doc.Diagram, "tui") {
-		t.Error("diagram missing tui node")
+	if !strings.Contains(doc.Diagram, "daemon") {
+		t.Error("diagram missing daemon node")
 	}
 }
 

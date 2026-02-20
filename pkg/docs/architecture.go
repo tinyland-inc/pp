@@ -65,7 +65,8 @@ func dcRenderArchMarkdown(doc *ArchDoc) string {
 	var b strings.Builder
 
 	b.WriteString("# Architecture\n\n")
-	b.WriteString("prompt-pulse v2 is organized into 29 packages across 10 architectural layers.\n\n")
+	b.WriteString("prompt-pulse v2 is organized into packages across architectural layers.\n")
+	b.WriteString("The interactive TUI is provided by the separate prompt-pulse-tui Rust binary.\n\n")
 
 	// Layers overview
 	b.WriteString("## Layers\n\n")
@@ -134,7 +135,7 @@ func dcAllPackages() []PackageInfo {
 			Name:          "app",
 			Path:          "pkg/app",
 			Description:   "Application lifecycle and dependency wiring for all prompt-pulse modes.",
-			Dependencies:  []string{"config", "terminal", "layout", "daemon", "tui", "banner", "shell"},
+			Dependencies:  []string{"config", "terminal", "layout", "daemon", "banner", "shell"},
 			ExportedTypes: []string{"App", "Mode"},
 		},
 
@@ -212,22 +213,6 @@ func dcAllPackages() []PackageInfo {
 			ExportedTypes: []string{"Cache", "Entry", "Options"},
 		},
 
-		// Widget layer
-		{
-			Name:          "widgets",
-			Path:          "pkg/widgets",
-			Description:   "Bubbletea widget models for each data source: claude, billing, tailscale, k8s, sysmetrics.",
-			Dependencies:  []string{"components", "data", "theme"},
-			ExportedTypes: []string{"ClaudeWidget", "BillingWidget", "TailscaleWidget", "K8sWidget", "SysMetricsWidget"},
-		},
-		{
-			Name:          "waifu",
-			Path:          "pkg/waifu",
-			Description:   "Waifu image fetching, caching, and rendering as a Bubbletea widget.",
-			Dependencies:  []string{"image", "cache"},
-			ExportedTypes: []string{"Widget", "FetchResult"},
-		},
-
 		// Shell layer
 		{
 			Name:          "shell",
@@ -249,22 +234,6 @@ func dcAllPackages() []PackageInfo {
 			Description:   "Terminal banner renderer with adaptive width modes: compact, standard, wide, ultra-wide.",
 			Dependencies:  []string{"image", "data", "theme", "config"},
 			ExportedTypes: []string{"Renderer", "Mode"},
-		},
-
-		// TUI layer
-		{
-			Name:          "tui",
-			Path:          "pkg/tui",
-			Description:   "Full-screen Bubbletea TUI with widget grid, vim keys, and mouse support.",
-			Dependencies:  []string{"widgets", "layout", "theme", "data", "config"},
-			ExportedTypes: []string{"Model", "Msg"},
-		},
-		{
-			Name:          "preset",
-			Path:          "pkg/preset",
-			Description:   "Layout preset definitions: dashboard, minimal, ops, billing configurations.",
-			Dependencies:  []string{"layout", "config"},
-			ExportedTypes: []string{"Preset", "PresetName"},
 		},
 
 		// Integration layer
@@ -380,19 +349,9 @@ func dcAllLayers() []LayerInfo {
 			Description: "Data collection, storage, and caching. Each collector fetches from a specific data source on a configurable interval.",
 		},
 		{
-			Name:        "Widget",
-			Packages:    []string{"widgets", "waifu"},
-			Description: "Bubbletea widget models that render collected data into interactive terminal UI components.",
-		},
-		{
 			Name:        "Shell",
 			Packages:    []string{"shell", "starship", "banner"},
 			Description: "Shell integration hooks, Starship prompt segments, and terminal banner rendering.",
-		},
-		{
-			Name:        "TUI",
-			Packages:    []string{"tui", "preset"},
-			Description: "Full-screen terminal UI with configurable layout presets and interactive navigation.",
 		},
 		{
 			Name:        "Integration",
@@ -425,18 +384,14 @@ func dcArchDiagram() string {
                          |
          +---------------+----------------+
          |               |                |
-    +----v----+    +-----v-----+    +-----v-----+
-    |   tui   |    |  banner   |    |   shell   |
-    +----+----+    +-----+-----+    +-----+-----+
-         |               |                |
-    +----v----+    +-----v-----+          |
-    | widgets |    |   image   |          |
-    +----+----+    +-----------+          |
+    +----v-----+   +-----v-----+    +-----v-----+
+    |  banner  |   |  daemon   |    |   shell   |
+    +----+-----+   +-----------+    +-----+-----+
          |                                |
-    +----v-------+                        |
-    | components |                        |
-    +----+-------+                        |
-         |                                |
+    +----v-----+                          |
+    |  image   |                          |
+    +----------+                          |
+                                          |
     +----v----+    +-----+-----+    +-----v-----+
     |  theme  |    |   data    |    |  config   |
     +---------+    +-----+-----+    +-----------+
@@ -448,5 +403,7 @@ func dcArchDiagram() string {
          +--------+ +--------+ +--------+
          +--------+ +--------+
          |  k8s   | |billing |
-         +--------+ +--------+`
+         +--------+ +--------+
+
+    TUI: prompt-pulse-tui (Rust/ratatui) — separate binary`
 }

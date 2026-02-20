@@ -4,12 +4,9 @@ import (
 	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/app"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/banner"
 	"gitlab.com/tinyland/lab/prompt-pulse/pkg/cache"
-	"gitlab.com/tinyland/lab/prompt-pulse/pkg/tui"
 )
 
 // itMockClaudeData returns mock Claude API response data structured as
@@ -271,71 +268,6 @@ func itMockAppWidgets() []app.Widget {
 		app.NewPlaceholder("k8s", "Kubernetes"),
 		app.NewPlaceholder("sysmetrics", "System Metrics"),
 		app.NewPlaceholder("waifu", "Waifu"),
-	}
-}
-
-// itNewTUIModel creates a tui.Model with the given widgets.
-func itNewTUIModel(widgets []app.Widget) tui.Model {
-	return tui.New(widgets)
-}
-
-// itTUISendResize sends a WindowSizeMsg to the TUI model.
-func itTUISendResize(m tui.Model, width, height int) tui.Model {
-	msg := tea.WindowSizeMsg{Width: width, Height: height}
-	updated, _ := m.Update(msg)
-	return updated.(tui.Model)
-}
-
-// itTUISendKey sends a key message to the TUI model.
-func itTUISendKey(m tui.Model, key string) tui.Model {
-	msg := tea.KeyMsg{Type: itKeyType(key), Runes: itKeyRunes(key)}
-	updated, _ := m.Update(msg)
-	return updated.(tui.Model)
-}
-
-// itTUISendRunes sends a sequence of rune key messages to the TUI model.
-func itTUISendRunes(m tui.Model, text string) tui.Model {
-	for _, r := range text {
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
-		updated, _ := m.Update(msg)
-		m = updated.(tui.Model)
-	}
-	return m
-}
-
-// itKeyType maps a key string to a tea.KeyType.
-func itKeyType(key string) tea.KeyType {
-	switch key {
-	case "tab":
-		return tea.KeyTab
-	case "shift+tab":
-		return tea.KeyShiftTab
-	case "enter":
-		return tea.KeyEnter
-	case "esc":
-		return tea.KeyEscape
-	case "backspace":
-		return tea.KeyBackspace
-	case "ctrl+c":
-		return tea.KeyCtrlC
-	case "/":
-		return tea.KeyRunes
-	case "q":
-		return tea.KeyRunes
-	case "?":
-		return tea.KeyRunes
-	default:
-		return tea.KeyRunes
-	}
-}
-
-// itKeyRunes returns the rune slice for a key string.
-func itKeyRunes(key string) []rune {
-	switch key {
-	case "tab", "shift+tab", "enter", "esc", "backspace", "ctrl+c":
-		return nil
-	default:
-		return []rune(key)
 	}
 }
 

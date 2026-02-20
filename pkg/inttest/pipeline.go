@@ -232,32 +232,6 @@ func itStageBanner() (func() error, func() error) {
 	return run, verify
 }
 
-// itStageTUI returns a pipeline stage that creates a TUI model, sends a
-// resize message, and verifies the view output.
-func itStageTUI() (func() error, func() error) {
-	var viewOutput string
-
-	run := func() error {
-		widgets := itMockAppWidgets()
-		m := itNewTUIModel(widgets)
-		m = itTUISendResize(m, 120, 35)
-		viewOutput = m.View()
-		return nil
-	}
-
-	verify := func() error {
-		if viewOutput == "" {
-			return fmt.Errorf("TUI view returned empty string")
-		}
-		if !strings.Contains(viewOutput, "Initializing") && len(viewOutput) < 10 {
-			return fmt.Errorf("TUI view output too short: %d chars", len(viewOutput))
-		}
-		return nil
-	}
-
-	return run, verify
-}
-
 // itStageShell returns a pipeline stage that generates shell scripts for
 // all four shells and validates syntax patterns.
 func itStageShell() (func() error, func() error) {
@@ -416,9 +390,6 @@ func itBuildFullPipeline() *Pipeline {
 
 	bannerRun, bannerVerify := itStageBanner()
 	p.AddStage("banner", bannerRun, bannerVerify)
-
-	tuiRun, tuiVerify := itStageTUI()
-	p.AddStage("tui", tuiRun, tuiVerify)
 
 	shellRun, shellVerify := itStageShell()
 	p.AddStage("shell", shellRun, shellVerify)
