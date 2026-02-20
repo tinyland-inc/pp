@@ -64,6 +64,7 @@ func main() {
 		runDiagnose    = flag.Bool("diagnose", false, "Claude diagnostics")
 		runMigrate     = flag.Bool("migrate", false, "Run v1-to-v2 config migration")
 		showMan        = flag.Bool("man", false, "Print man page to stdout in roff format")
+		manDir         = flag.String("man-dir", "", "Write all man pages to directory (e.g., /usr/share/man)")
 		verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 		showVersion    = flag.Bool("version", false, "Print version and exit")
 		termWidth      = flag.Int("term-width", 0, "Terminal width override (0 = auto-detect)")
@@ -98,6 +99,16 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Print(output)
+		os.Exit(0)
+	}
+
+	if *manDir != "" {
+		n, err := docs.WriteManPages(*manDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "man page generation failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %d man pages to %s\n", n, *manDir)
 		os.Exit(0)
 	}
 

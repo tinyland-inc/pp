@@ -43,14 +43,17 @@ type UsageReport struct {
 
 // AccountUsage holds usage data for a single Anthropic account.
 type AccountUsage struct {
-	Name           string           `json:"name"`
-	OrganizationID string           `json:"organization_id"`
-	Connected      bool             `json:"connected"`
-	Error          string           `json:"error,omitempty"`
-	CurrentMonth   MonthUsage       `json:"current_month"`
-	PreviousMonth  MonthUsage       `json:"previous_month"`
-	Models         []ModelUsage     `json:"models"`
-	Workspaces     []WorkspaceUsage `json:"workspaces"`
+	Name             string           `json:"name"`
+	OrganizationID   string           `json:"organization_id"`
+	Connected        bool             `json:"connected"`
+	Error            string           `json:"error,omitempty"`
+	CurrentMonth     MonthUsage       `json:"current_month"`
+	PreviousMonth    MonthUsage       `json:"previous_month"`
+	Models           []ModelUsage     `json:"models"`
+	Workspaces       []WorkspaceUsage `json:"workspaces"`
+	DailyBurnRate    float64          `json:"daily_burn_rate"`
+	ProjectedMonthly float64          `json:"projected_monthly"`
+	DaysRemaining    int              `json:"days_remaining"`
 }
 
 // MonthUsage aggregates token counts and cost for a calendar month.
@@ -168,10 +171,11 @@ func (c *Collector) Collect(ctx context.Context) (interface{}, error) {
 		}
 
 		au := c.collectAccount(ctx, acct, curStart, curEnd, prevStart, prevEnd)
-		report.Accounts = append(report.Accounts, au)
 		if au.Connected {
 			anyConnected = true
+			c.calculateBurnRate(&au, now)
 		}
+		report.Accounts = append(report.Accounts, au)
 		report.TotalCostUSD += au.CurrentMonth.CostUSD
 	}
 
@@ -238,6 +242,28 @@ func (c *Collector) collectAccount(
 	}
 
 	return au
+}
+
+// calculateBurnRate populates the daily burn rate, projected monthly cost,
+// and days remaining on the given AccountUsage based on current month cost
+// and elapsed days.
+func (c *Collector) calculateBurnRate(au *AccountUsage, now time.Time) {
+	year, month, day := now.Date()
+	loc := now.Location()
+
+	// Days elapsed this month (at least 1 to avoid division by zero).
+	daysElapsed := day
+	if daysElapsed < 1 {
+		daysElapsed = 1
+	}
+
+	// Total days in this month.
+	firstOfNext := time.Date(year, month+1, 1, 0, 0, 0, 0, loc)
+	daysInMonth := firstOfNext.AddDate(0, 0, -1).Day()
+
+	au.DailyBurnRate = au.CurrentMonth.CostUSD / float64(daysElapsed)
+	au.ProjectedMonthly = au.DailyBurnRate * float64(daysInMonth)
+	au.DaysRemaining = daysInMonth - day
 }
 
 // aggregateMonth sums all entries in an API response into a single MonthUsage.

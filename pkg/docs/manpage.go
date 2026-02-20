@@ -2,6 +2,8 @@ package docs
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -64,6 +66,24 @@ func dcAllManPages() []*ManPage {
 		dcManTUI(),
 		dcManConfig(),
 	}
+}
+
+// WriteManPages writes all man pages as roff files to the given base directory,
+// creating man1/ and man5/ subdirectories as needed. Returns the number of pages written.
+func WriteManPages(baseDir string) (int, error) {
+	pages := dcAllManPages()
+	for _, mp := range pages {
+		subdir := filepath.Join(baseDir, "man"+mp.Section)
+		if err := os.MkdirAll(subdir, 0o755); err != nil {
+			return 0, fmt.Errorf("creating %s: %w", subdir, err)
+		}
+		path := filepath.Join(subdir, mp.Name+"."+mp.Section)
+		content := dcRenderManRoff(mp)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return 0, fmt.Errorf("writing %s: %w", path, err)
+		}
+	}
+	return len(pages), nil
 }
 
 // dcRenderManRoff renders a ManPage in roff/troff format suitable for man(1).

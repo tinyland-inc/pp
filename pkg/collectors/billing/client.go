@@ -23,6 +23,7 @@ type CivoClient interface {
 	GetCharges(ctx context.Context) (*CivoChargesResponse, error)
 	GetKubernetes(ctx context.Context) (*CivoK8sResponse, error)
 	GetInstances(ctx context.Context) (*CivoInstancesResponse, error)
+	GetSizes(ctx context.Context) (*CivoSizesResponse, error)
 }
 
 // CivoChargesResponse represents the response from GET /v2/charges.
@@ -48,10 +49,28 @@ type CivoK8sResponse struct {
 
 // CivoK8sCluster is a Kubernetes cluster from the Civo API.
 type CivoK8sCluster struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Status      string  `json:"status"`
-	MonthlyCost float64 `json:"monthly_cost"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Status          string  `json:"status"`
+	MonthlyCost     float64 `json:"monthly_cost"`
+	NumTargetNodes  int     `json:"num_target_nodes"`
+	TargetNodesSize string  `json:"target_nodes_size"`
+}
+
+// CivoSizesResponse represents the response from GET /v2/sizes.
+type CivoSizesResponse struct {
+	Items []CivoSize `json:"items"`
+}
+
+// CivoSize represents an instance size with pricing information.
+type CivoSize struct {
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	CPUCores     int     `json:"cpu_cores"`
+	RAMMb        int     `json:"ram_mb"`
+	DiskGb       int     `json:"disk_gb"`
+	PriceMonthly float64 `json:"price_monthly"`
+	PriceHourly  float64 `json:"price_hourly"`
 }
 
 // CivoInstancesResponse represents the response from GET /v2/instances.
@@ -64,6 +83,7 @@ type CivoInstance struct {
 	ID          string  `json:"id"`
 	Hostname    string  `json:"hostname"`
 	Status      string  `json:"status"`
+	Size        string  `json:"size"`
 	MonthlyCost float64 `json:"monthly_cost"`
 }
 
@@ -140,6 +160,14 @@ func (c *civoHTTPClient) GetKubernetes(ctx context.Context) (*CivoK8sResponse, e
 func (c *civoHTTPClient) GetInstances(ctx context.Context) (*CivoInstancesResponse, error) {
 	var resp CivoInstancesResponse
 	if err := c.doRequest(ctx, "/instances", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *civoHTTPClient) GetSizes(ctx context.Context) (*CivoSizesResponse, error) {
+	var resp CivoSizesResponse
+	if err := c.doRequest(ctx, "/sizes", &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

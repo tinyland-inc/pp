@@ -12,6 +12,25 @@ const (
 	DefaultInterval = 15 * time.Minute
 )
 
+// civoFallbackPricing contains known CIVO instance type monthly costs.
+// Used when both the cluster API and sizes API return $0.
+var civoFallbackPricing = map[string]float64{
+	"g4s.kube.xsmall":  5.00,
+	"g4s.kube.small":   10.00,
+	"g4s.kube.medium":  20.00,
+	"g4s.kube.large":   40.00,
+	"g4p.kube.xsmall":  15.00,
+	"g4p.kube.small":   30.00,
+	"g4p.kube.medium":  60.00,
+	"g4p.kube.large":   120.00,
+	"g4s.xsmall":       5.00,
+	"g4s.small":        10.00,
+	"g4s.medium":       20.00,
+	"g4s.large":        40.00,
+	"g4s.xlarge":       80.00,
+	"g4s.2xlarge":      160.00,
+}
+
 // Config holds the configuration for the billing collector.
 type Config struct {
 	// Interval is how often collection runs. Zero uses DefaultInterval.
@@ -243,14 +262,21 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 		return pb
 	}
 
+	// Build a sizes price map for enrichment when cluster.MonthlyCost is 0.
+	sizePrices := c.fetchSizePrices(ctx)
+
 	if k8s != nil {
 		for _, cluster := range k8s.Items {
+			cost := cluster.MonthlyCost
+			if cost == 0 {
+				cost = c.estimateClusterCost(cluster, sizePrices)
+			}
 			pb.Resources = append(pb.Resources, ResourceCost{
 				Name:        cluster.Name,
 				Type:        "kubernetes",
-				MonthlyCost: cluster.MonthlyCost,
+				MonthlyCost: cost,
 			})
-			pb.MonthToDate += cluster.MonthlyCost
+			pb.MonthToDate += cost
 		}
 	}
 
@@ -263,17 +289,61 @@ func (c *Collector) collectCivo(ctx context.Context) ProviderBilling {
 
 	if instances != nil {
 		for _, inst := range instances.Items {
+			cost := inst.MonthlyCost
+			if cost == 0 {
+				if p, ok := sizePrices[inst.Size]; ok {
+					cost = p
+				}
+			}
 			pb.Resources = append(pb.Resources, ResourceCost{
 				Name:        inst.Hostname,
 				Type:        "instance",
-				MonthlyCost: inst.MonthlyCost,
+				MonthlyCost: cost,
 			})
-			pb.MonthToDate += inst.MonthlyCost
+			pb.MonthToDate += cost
 		}
 	}
 
 	pb.Connected = true
 	return pb
+}
+
+// fetchSizePrices fetches the CIVO sizes API and returns a map of size name
+// to monthly price. Returns an empty map on error (best-effort).
+func (c *Collector) fetchSizePrices(ctx context.Context) map[string]float64 {
+	prices := make(map[string]float64)
+	sizes, err := c.civoClient.GetSizes(ctx)
+	if err != nil || sizes == nil {
+		return prices
+	}
+	for _, s := range sizes.Items {
+		if s.PriceMonthly > 0 {
+			prices[s.Name] = s.PriceMonthly
+		}
+	}
+	return prices
+}
+
+// estimateClusterCost calculates the cluster cost from node count and size
+// pricing. It tries the sizes API prices first, then falls back to hardcoded
+// known pricing.
+func (c *Collector) estimateClusterCost(cluster CivoK8sCluster, sizePrices map[string]float64) float64 {
+	if cluster.NumTargetNodes <= 0 || cluster.TargetNodesSize == "" {
+		return 0
+	}
+	nodeCount := float64(cluster.NumTargetNodes)
+
+	// Try sizes API price first.
+	if price, ok := sizePrices[cluster.TargetNodesSize]; ok && price > 0 {
+		return nodeCount * price
+	}
+
+	// Fall back to hardcoded pricing.
+	if price, ok := civoFallbackPricing[cluster.TargetNodesSize]; ok {
+		return nodeCount * price
+	}
+
+	return 0
 }
 
 // collectDO queries the DigitalOcean API and returns a ProviderBilling result.

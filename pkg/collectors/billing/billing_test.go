@@ -16,10 +16,12 @@ type mockCivoClient struct {
 	charges   *CivoChargesResponse
 	k8s       *CivoK8sResponse
 	instances *CivoInstancesResponse
+	sizes     *CivoSizesResponse
 
 	chargesErr   error
 	k8sErr       error
 	instancesErr error
+	sizesErr     error
 }
 
 func (m *mockCivoClient) GetCharges(ctx context.Context) (*CivoChargesResponse, error) {
@@ -41,6 +43,13 @@ func (m *mockCivoClient) GetInstances(ctx context.Context) (*CivoInstancesRespon
 		return nil, err
 	}
 	return m.instances, m.instancesErr
+}
+
+func (m *mockCivoClient) GetSizes(ctx context.Context) (*CivoSizesResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.sizes, m.sizesErr
 }
 
 type mockDOClient struct {
@@ -821,6 +830,172 @@ func TestDOBalanceResponse_ParseAccountBalance(t *testing.T) {
 				t.Errorf("ParseAccountBalance() = %f, want %f", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCollect_CivoZeroCost_EnrichedFromSizes(t *testing.T) {
+	civo := &mockCivoClient{
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{
+					ID:              "k8s-1",
+					Name:            "bitter-darkness",
+					Status:          "ACTIVE",
+					MonthlyCost:     0, // API returns 0
+					NumTargetNodes:  3,
+					TargetNodesSize: "g4s.kube.large",
+				},
+			},
+		},
+		instances: &CivoInstancesResponse{
+			Items: []CivoInstance{},
+		},
+		sizes: &CivoSizesResponse{
+			Items: []CivoSize{
+				{Name: "g4s.kube.small", PriceMonthly: 10.00},
+				{Name: "g4s.kube.medium", PriceMonthly: 20.00},
+				{Name: "g4s.kube.large", PriceMonthly: 40.00},
+			},
+		},
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// 3 nodes * $40/mo = $120.00
+	if !floatEqual(prov.MonthToDate, 120.00) {
+		t.Errorf("MonthToDate = %f, want 120.00 (3 * g4s.kube.large @ $40)", prov.MonthToDate)
+	}
+
+	if len(prov.Resources) != 1 {
+		t.Fatalf("Resources len = %d, want 1", len(prov.Resources))
+	}
+	if !floatEqual(prov.Resources[0].MonthlyCost, 120.00) {
+		t.Errorf("Resources[0].MonthlyCost = %f, want 120.00", prov.Resources[0].MonthlyCost)
+	}
+}
+
+func TestCollect_CivoZeroCost_FallbackPricing(t *testing.T) {
+	civo := &mockCivoClient{
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{
+					ID:              "k8s-1",
+					Name:            "test-cluster",
+					Status:          "ACTIVE",
+					MonthlyCost:     0,
+					NumTargetNodes:  4,
+					TargetNodesSize: "g4p.kube.medium",
+				},
+			},
+		},
+		instances: &CivoInstancesResponse{},
+		// Sizes API returns no pricing (or errors out).
+		sizes:    &CivoSizesResponse{Items: []CivoSize{}},
+		sizesErr: nil,
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// 4 nodes * $60/mo (fallback price for g4p.kube.medium) = $240.00
+	if !floatEqual(prov.MonthToDate, 240.00) {
+		t.Errorf("MonthToDate = %f, want 240.00 (4 * g4p.kube.medium @ $60 fallback)", prov.MonthToDate)
+	}
+}
+
+func TestCollect_CivoZeroCost_SizesAPIError(t *testing.T) {
+	civo := &mockCivoClient{
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{
+					ID:              "k8s-1",
+					Name:            "test-cluster",
+					Status:          "ACTIVE",
+					MonthlyCost:     0,
+					NumTargetNodes:  2,
+					TargetNodesSize: "g4s.kube.large",
+				},
+			},
+		},
+		instances: &CivoInstancesResponse{},
+		sizesErr:  errors.New("sizes API unavailable"),
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// Sizes API failed, falls back to hardcoded: 2 * $40 = $80
+	if !floatEqual(prov.MonthToDate, 80.00) {
+		t.Errorf("MonthToDate = %f, want 80.00 (fallback pricing)", prov.MonthToDate)
+	}
+
+	// Should still be connected (sizes failure is non-fatal).
+	if !prov.Connected {
+		t.Error("civo.Connected = false, want true (sizes error is best-effort)")
+	}
+}
+
+func TestCollect_CivoNonZeroCost_NotEnriched(t *testing.T) {
+	civo := &mockCivoClient{
+		k8s: &CivoK8sResponse{
+			Items: []CivoK8sCluster{
+				{
+					ID:              "k8s-1",
+					Name:            "has-cost",
+					Status:          "ACTIVE",
+					MonthlyCost:     50.00, // API returns real cost
+					NumTargetNodes:  3,
+					TargetNodesSize: "g4s.kube.large",
+				},
+			},
+		},
+		instances: &CivoInstancesResponse{},
+		sizes:     &CivoSizesResponse{Items: []CivoSize{}},
+	}
+
+	c := newWithClients(Config{
+		Civo: &CivoConfig{APIKey: "test-key"},
+	}, civo, nil)
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*BillingReport)
+	prov := report.Providers[0]
+
+	// Should use the API-provided cost, not enrichment.
+	if !floatEqual(prov.MonthToDate, 50.00) {
+		t.Errorf("MonthToDate = %f, want 50.00 (API-provided cost)", prov.MonthToDate)
 	}
 }
 

@@ -820,6 +820,143 @@ func TestCollect_NilClient(t *testing.T) {
 	}
 }
 
+func TestCollect_BurnRate(t *testing.T) {
+	mock := newMockAPIClient()
+
+	// Usage on Feb 9 with known costs.
+	mock.setResponse("org-1", "2026-02-01", "2026-02-09", &APIUsageResponse{
+		Data: []APIUsageEntry{
+			{
+				Date:         "2026-02-01",
+				Model:        "claude-sonnet-4-5-20250929",
+				InputTokens:  1_000_000,
+				OutputTokens: 500_000,
+			},
+		},
+	})
+
+	cfg := Config{
+		Accounts: []AccountConfig{
+			{Name: "test", AdminAPIKey: "sk-admin", OrganizationID: "org-1"},
+		},
+	}
+
+	c := New(cfg, mock)
+	c.nowFunc = fixedNow // Feb 9
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*UsageReport)
+	acct := report.Accounts[0]
+
+	// Verify burn rate fields are populated.
+	if acct.DailyBurnRate <= 0 {
+		t.Errorf("DailyBurnRate = %f, want > 0", acct.DailyBurnRate)
+	}
+	if acct.ProjectedMonthly <= 0 {
+		t.Errorf("ProjectedMonthly = %f, want > 0", acct.ProjectedMonthly)
+	}
+
+	// Feb 9: 9 days elapsed, 28 days in Feb 2026.
+	expectedBurnRate := acct.CurrentMonth.CostUSD / 9.0
+	if math.Abs(acct.DailyBurnRate-expectedBurnRate) > 0.001 {
+		t.Errorf("DailyBurnRate = %f, want %f", acct.DailyBurnRate, expectedBurnRate)
+	}
+
+	expectedProjected := expectedBurnRate * 28.0
+	if math.Abs(acct.ProjectedMonthly-expectedProjected) > 0.001 {
+		t.Errorf("ProjectedMonthly = %f, want %f", acct.ProjectedMonthly, expectedProjected)
+	}
+
+	// Days remaining: 28 - 9 = 19.
+	if acct.DaysRemaining != 19 {
+		t.Errorf("DaysRemaining = %d, want 19", acct.DaysRemaining)
+	}
+}
+
+func TestCollect_BurnRate_DisconnectedAccount(t *testing.T) {
+	mock := newMockAPIClient()
+	mock.setError("org-fail", "2026-02-01", "2026-02-09", errors.New("auth error"))
+
+	cfg := Config{
+		Accounts: []AccountConfig{
+			{Name: "fail", AdminAPIKey: "sk-admin", OrganizationID: "org-fail"},
+		},
+	}
+
+	c := New(cfg, mock)
+	c.nowFunc = fixedNow
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*UsageReport)
+	acct := report.Accounts[0]
+
+	// Disconnected accounts should have zero burn rate.
+	if acct.DailyBurnRate != 0 {
+		t.Errorf("DailyBurnRate = %f, want 0 (disconnected)", acct.DailyBurnRate)
+	}
+	if acct.ProjectedMonthly != 0 {
+		t.Errorf("ProjectedMonthly = %f, want 0 (disconnected)", acct.ProjectedMonthly)
+	}
+	if acct.DaysRemaining != 0 {
+		t.Errorf("DaysRemaining = %d, want 0 (disconnected)", acct.DaysRemaining)
+	}
+}
+
+func TestCollect_BurnRate_FirstDayOfMonth(t *testing.T) {
+	mock := newMockAPIClient()
+
+	// March 1st — only 1 day elapsed.
+	march1 := func() time.Time {
+		return time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	}
+
+	mock.setResponse("org-1", "2026-03-01", "2026-03-01", &APIUsageResponse{
+		Data: []APIUsageEntry{
+			{
+				Date:         "2026-03-01",
+				Model:        "claude-sonnet-4-5-20250929",
+				InputTokens:  100_000,
+				OutputTokens: 50_000,
+			},
+		},
+	})
+
+	cfg := Config{
+		Accounts: []AccountConfig{
+			{Name: "test", AdminAPIKey: "sk-admin", OrganizationID: "org-1"},
+		},
+	}
+
+	c := New(cfg, mock)
+	c.nowFunc = march1
+
+	result, err := c.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	report := result.(*UsageReport)
+	acct := report.Accounts[0]
+
+	// Burn rate = cost / 1 day.
+	if math.Abs(acct.DailyBurnRate-acct.CurrentMonth.CostUSD) > 0.001 {
+		t.Errorf("DailyBurnRate = %f, want %f (1 day)", acct.DailyBurnRate, acct.CurrentMonth.CostUSD)
+	}
+
+	// March has 31 days; remaining = 30.
+	if acct.DaysRemaining != 30 {
+		t.Errorf("DaysRemaining = %d, want 30 (March 1)", acct.DaysRemaining)
+	}
+}
+
 // Compile-time check that Collector satisfies the duck-typed interface.
 type collectorIface interface {
 	Name() string
