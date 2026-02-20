@@ -142,6 +142,10 @@ type CivoConfig struct {
 	// APIKey for Civo API access.
 	// Prefer setting via CIVO_TOKEN environment variable.
 	APIKey string `toml:"api_key"`
+
+	// Region is the Civo region code (e.g., "nyc1").
+	// Prefer setting via CIVO_REGION environment variable.
+	Region string `toml:"region"`
 }
 
 // DOConfig holds DigitalOcean billing settings.

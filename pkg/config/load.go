@@ -144,6 +144,9 @@ func applyEnvOverrides(cfg *Config) {
 	} else if v := readEnvFile("CIVO_API_KEY_FILE"); v != "" {
 		cfg.Collectors.Billing.Civo.APIKey = v
 	}
+	if v := os.Getenv("CIVO_REGION"); v != "" {
+		cfg.Collectors.Billing.Civo.Region = v
+	}
 	if v := os.Getenv("DIGITALOCEAN_TOKEN"); v != "" {
 		cfg.Collectors.Billing.DigitalOcean.APIKey = v
 	} else if v := readEnvFile("DIGITALOCEAN_TOKEN_FILE"); v != "" {

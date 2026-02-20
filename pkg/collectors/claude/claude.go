@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -184,6 +185,9 @@ func (c *Collector) resolveOrgIDs(ctx context.Context) {
 		if c.accounts[i].OrganizationID != "" || c.accounts[i].AdminAPIKey == "" {
 			continue
 		}
+		if strings.HasPrefix(c.accounts[i].AdminAPIKey, "sk-ant-api") {
+			continue
+		}
 		orgs, err := c.client.GetOrganizations(ctx, c.accounts[i].AdminAPIKey)
 		if err != nil {
 			continue
@@ -207,6 +211,13 @@ func (c *Collector) collectAccount(
 	au := AccountUsage{
 		Name:           acct.Name,
 		OrganizationID: acct.OrganizationID,
+	}
+
+	// Admin API requires admin keys (sk-ant-admin01-*). Regular API keys
+	// (sk-ant-api03-*) cannot access /v1/organizations endpoints.
+	if strings.HasPrefix(acct.AdminAPIKey, "sk-ant-api") {
+		au.Error = "key is not an admin key (requires sk-ant-admin01-*); get one at console.anthropic.com"
+		return au
 	}
 
 	// Fetch current month usage.

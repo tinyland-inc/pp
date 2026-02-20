@@ -87,6 +87,7 @@ func BuildRegistry(cfg *config.Config) *collectors.Registry {
 		if cfg.Collectors.Billing.Civo.APIKey != "" {
 			bcfg.Civo = &billing.CivoConfig{
 				APIKey: cfg.Collectors.Billing.Civo.APIKey,
+				Region: cfg.Collectors.Billing.Civo.Region,
 			}
 		}
 		if cfg.Collectors.Billing.DigitalOcean.APIKey != "" {

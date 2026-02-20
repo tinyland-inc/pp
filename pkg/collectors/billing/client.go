@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -70,14 +71,15 @@ type CivoInstance struct {
 type civoHTTPClient struct {
 	baseURL string
 	apiKey  string
+	region  string
 	client  *http.Client
 }
 
 func newCivoHTTPClient(apiKey, region string) *civoHTTPClient {
-	baseURL := "https://api.civo.com/v2"
 	return &civoHTTPClient{
-		baseURL: baseURL,
+		baseURL: "https://api.civo.com/v2",
 		apiKey:  apiKey,
+		region:  region,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -86,6 +88,13 @@ func newCivoHTTPClient(apiKey, region string) *civoHTTPClient {
 
 func (c *civoHTTPClient) doRequest(ctx context.Context, path string, out interface{}) error {
 	url := c.baseURL + path
+	if c.region != "" {
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		url += sep + "region=" + c.region
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -122,7 +131,7 @@ func (c *civoHTTPClient) GetCharges(ctx context.Context) (*CivoChargesResponse, 
 
 func (c *civoHTTPClient) GetKubernetes(ctx context.Context) (*CivoK8sResponse, error) {
 	var resp CivoK8sResponse
-	if err := c.doRequest(ctx, "/kubernetes", &resp); err != nil {
+	if err := c.doRequest(ctx, "/kubernetes/clusters", &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
