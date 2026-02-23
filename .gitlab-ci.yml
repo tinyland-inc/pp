@@ -17,6 +17,7 @@ variables:
   GOPATH: ${CI_PROJECT_DIR}/.go
   GOCACHE: ${CI_PROJECT_DIR}/.go-cache
   GOMODCACHE: ${CI_PROJECT_DIR}/.go-mod-cache
+  CI_MIRROR: ${CI_MIRROR:-registry.gitlab.com/tinyland/gloriousflywheel}
 
 # =============================================================================
 # Reusable Templates
@@ -43,7 +44,7 @@ variables:
 # =============================================================================
 
 check:flake:
-  image: nixos/nix:2.24.9
+  image: ${CI_MIRROR}/nix:2.24.9
   stage: check
   tags: [tinyland, docker]
   timeout: 5 minutes
@@ -177,7 +178,7 @@ test:race:
 # =============================================================================
 
 .nix_build_base:
-  image: nixos/nix:2.24.9
+  image: ${CI_MIRROR}/nix:2.24.9
   stage: build
   timeout: 20 minutes
   variables:
@@ -289,7 +290,7 @@ build:go:darwin-arm64:
 
 publish:package:
   stage: publish
-  image: alpine:latest
+  image: ${CI_MIRROR}/alpine:latest
   needs:
     - job: build:go:linux-amd64
       artifacts: true
@@ -389,7 +390,7 @@ publish:release:
 # =============================================================================
 
 cache:attic:
-  image: nixos/nix:2.24.9
+  image: ${CI_MIRROR}/nix:2.24.9
   stage: cache
   tags: [tinyland, docker]
   timeout: 10 minutes
