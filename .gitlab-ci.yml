@@ -17,7 +17,7 @@ variables:
   GOPATH: ${CI_PROJECT_DIR}/.go
   GOCACHE: ${CI_PROJECT_DIR}/.go-cache
   GOMODCACHE: ${CI_PROJECT_DIR}/.go-mod-cache
-  CI_MIRROR: ${CI_MIRROR:-registry.gitlab.com/tinyland/gloriousflywheel}
+  CI_MIRROR: ${CI_MIRROR:-registry.gitlab.com/tinyland/gf-overlay}
 
 # =============================================================================
 # Reusable Templates
